@@ -9,6 +9,9 @@
   //default settings (can be overwritten and stored in EEPRom)
   #define INTERVAL 10000       //how often to collect data (milli sec, 600000 - 10 mins)
   #define INTERVAL_SEND 1      //how many times to collect data before sending (times), sending interval interval*interval_send (4 default)
+  #define SMS_SEND_INTERVAL 24*60*60*1000 //how often (in ms) to send a location SMS message
+  #define SMS_SEND_NUMBER ""    // upto 15 digits of phone number without any 
+                                   leading + e.g. "447819999999" for a UK mobile
   #define POWERSAVE 0          //enable powersaving (turn off modem, gps on every loop)
   #define KEY "cSQ88qShwC3V"     //key for connection, will be sent with every data transmission
   #define DATA_LIMIT 2500      //current data limit, data collected before sending to remote server can not exceed this
