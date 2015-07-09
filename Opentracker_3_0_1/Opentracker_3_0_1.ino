@@ -1,3 +1,4 @@
+#include <limits.h>
 //tracker config
 #include "tracker.h" 
 
@@ -21,19 +22,18 @@
 
 // Variables will change:
 int ledState = LOW;             // ledState used to set the LED
-long previousMillis = 0;        // will store last time LED was updated
-long watchdogMillis = 0;        // will store last time modem watchdog was reset
+unsigned long previousMillis = 0;        // will store last time LED was updated
+unsigned long watchdogMillis = 0;        // will store last time modem watchdog was reset
 
-long time_start, time_stop, time_diff; //count execution time to trigger interval  
+unsigned long time_start, time_stop; //count execution time to trigger interval  
 int interval_count = 0; //current interval count (increased on each data collection and reset after sending)
-long lastSMSSendTime = 0;
+unsigned long lastSMSSendTime = 0;
 char data_current[DATA_LIMIT];   //data collected in one go, max 2500 chars 
 int data_index = 0;        //current data index (where last data record stopped)
 char time_char[20];             //time attached to every data line
 char modem_command[256];  // Modem AT command buffer
 char modem_data[PACKET_SIZE]; // Modem TCP data buffer
 char modem_reply[200];    //data received from modem, max 200 chars   
-size_t last_line_index;
 long logindex = STORAGE_DATA_START;
 byte save_config = 0;      //flag to save config to flash
 byte power_reboot = 0; //flag to reboot everything (used after new settings have been saved)
@@ -119,6 +119,13 @@ void setup() {
     debug_println(F("setup() completed"));
 }
 
+unsigned long time_diff(unsigned long end_time, unsigned long start_time) {
+    if (end_time >= start_time) {
+        return end_time - start_time;
+    }
+    return end_time + (ULONG_MAX-start_time) + 1;
+}
+
 void loop() {
     int IGNT_STAT;
     //start counting time
@@ -166,7 +173,7 @@ void loop() {
         }
         debug_print(F("Current: "));
         debug_println(data_current);
-        if (time_start - lastSMSSendTime > SMS_SEND_INTERVAL) {
+        if (time_diff(time_start, lastSMSSendTime) > SMS_SEND_INTERVAL) {
             if (strlen(data_current) == 0) {
                 debug_println(F("Was time to send SMS location but no location data available"));
             } else {
@@ -199,23 +206,13 @@ void loop() {
     }
     if (!ENGINE_RUNNING_LOG_FAST_AS_POSSIBLE || IGNT_STAT != 0) {
         time_stop = millis();
-        if (time_stop > time_start) {
-            //check how many  
-            time_diff = time_stop - time_start;
-            time_diff = config.interval - time_diff;
+        unsigned long loop_time = time_diff(time_stop, time_start);
+        if (loop_time < config.interval) {
+            unsigned long sleep_time = config.interval - loop_time;
             debug_print(F("Sleeping for: "));
-            debug_print(time_diff);
+            debug_print(sleep_time);
             debug_println(F("ms"));
-            if (time_diff > 0) {
-                delay(time_diff);
-            } else {
-                debug_println(F("Error: negative sleep time."));
-                delay(500);
-            }
-        } else {
-            //probably counter reset, 50 days passed
-            debug_println(F("Time counter reset"));
-            delay(1000);
+            delay(sleep_time);
         }
     }
 }
