@@ -47,7 +47,6 @@ void gsm_restart() {
 }
 
 void gsm_send_command() {
-    last_line_index = 0;
     modem_reply[0] = '\0';
     debug_print(F("gsm_send_command(): "));
     debug_println(modem_command);
@@ -476,17 +475,13 @@ int gsm_send_data() {
 void gsm_get_reply() {
     //get reply from the modem
     size_t index = strlen(modem_reply);
-    last_line_index = index;
     while (gsm_port.available()) {
         char inChar = gsm_port.read(); // Read a character
-        if (index < sizeof(modem_reply)) { // One less than the size of the array
-            modem_reply[index] = inChar; // Store it
-            index++; // Increment where to write next
-        }
-        if (inChar == '\n') {
-          break;
-        }
         if (index == sizeof(modem_reply)-1) {
+            break;
+        }
+        modem_reply[index++] = inChar; // Store it
+        if (inChar == '\n') {
             break;
         }
     }
@@ -566,10 +561,43 @@ void show_modem_reply() {
     debug_println("'");
 }
 
+/*!
+ * Locates the start of the last line in the modem reply buffer.
+ * e.g.
+ *    modem_reply = ""                      returns 0
+ *    modem_reply = "\n"                    returns 0
+ *    modem_reply = "\r\n"                  returns 0
+ *    modem_reply = "hello\r\n"             returns 0
+ *    modem_reply = "hello\r\nthere"        returns 7
+ *    modem_reply = "hello\r\nthere\r\n")   returns 7
+ * @return the offset into modem_reply[] of the start of the last line
+ */
+size_t locate_last_line() {
+    /* "xxxxxx/r/nxxxxxx/r/n" */
+    /*            ^           */
+    size_t pos = 0;
+    size_t len = strlen(modem_reply);
+    if (len > 1) {
+        pos = len - 1;
+        if (modem_reply[pos] == '\n') {
+            pos -= 1;
+        }
+        while (pos > 0) {
+            if (modem_reply[pos] == '\n') {
+                ++pos;
+                break;
+            }
+            pos -= 1;
+        }
+    }
+    return pos;
+}
+
 bool gsm_is_final_result(int allowOK) {
     if (allowOK && gsm_modem_reply_ends_with("\r\nOK\r\n")) {
         return true;
     }
+    size_t last_line_index = locate_last_line();
     switch (modem_reply[last_line_index]) {
     case '+':
         if (gsm_modem_reply_matches(last_line_index+1, "CME ERROR:")) {
