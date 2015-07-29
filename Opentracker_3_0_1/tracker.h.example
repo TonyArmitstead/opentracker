@@ -1,7 +1,8 @@
-
   //OpenTracker config
   #define DEBUG 1          //enable debug msg, sent to serial port  
-
+#define CR '\r'
+#define LF '\n'
+#define MAX_PHONE_NUMBER_LEN 16  // Max number of digits in a phone number
   #define ALWAYS_ON 0      //set to 1 to make the tracker log even with the ignition off
 
   long led_interval = 1000;    // interval at which to blink status led (milliseconds) 
@@ -11,10 +12,11 @@
   #define INTERVAL_SEND 1      //how many times to collect data before sending (times), sending interval interval*interval_send (4 default)
   #define SMS_SEND_INTERVAL 24*60*60*1000 //how often (in ms) to send a location SMS message
   #define SMS_SEND_NUMBER ""    // upto 15 digits of phone number without any 
-                                   leading + e.g. "447819999999" for a UK mobile
+                                // leading + e.g. "447819999999" for a UK mobile
   #define POWERSAVE 0          //enable powersaving (turn off modem, gps on every loop)
   #define KEY "cSQ88qShwC3V"     //key for connection, will be sent with every data transmission
   #define DATA_LIMIT 2500      //current data limit, data collected before sending to remote server can not exceed this
+#define MAX_SMS_KEY_LEN 12  // SMS key cant be longer than this
   #define SMS_KEY "pass"       //default password for SMS auth
 
   #define SMS_DONT_CHECK_WITH_ENGINE_RUNNING 1 // don't check for sms commands when the engine is running
