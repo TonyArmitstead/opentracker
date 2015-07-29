@@ -250,3 +250,15 @@ void collect_gps_data() {
     }
 }
 
+void gps_form_location_url(
+    char* pURL,
+    size_t urlSize
+) {
+    if (LOCATE_COMMAND_FORMAT_IOS) {
+        snprintf(pURL, urlSize, "comgooglemaps://?q=%s,%s", lat_current,
+            lon_current);
+    } else {
+        snprintf(pURL, urlSize, "https://maps.google.co.uk/maps/place/%s,%s",
+            lat_current, lon_current);
+    }
+}
