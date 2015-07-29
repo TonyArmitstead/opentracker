@@ -458,11 +458,11 @@ int gsm_send_data() {
             //get reply and parse
             ret_tmp = parse_receive_reply();
         }
-        gsm_disconnect(0);
+        gsm_disconnect(1);
         gsm_send_failures = 0;
     } else {
         debug_println(F("Error, can not send data, no connection."));
-        gsm_disconnect(0);
+        gsm_disconnect(1);
         gsm_send_failures++;
         if (GSM_SEND_FAILURES_REBOOT > 0
             && gsm_send_failures >= GSM_SEND_FAILURES_REBOOT) {
@@ -492,13 +492,14 @@ void gsm_wait_for_reply(int allowOK) {
     unsigned long timeout = millis();
 
     modem_reply[0] = '\0';
+    gsm_get_reply();
     while (!gsm_is_final_result(allowOK)) {
         if ((millis() - timeout) >= (GSM_MODEM_COMMAND_TIMEOUT * 1000)) {
             debug_println(F("Warning: timed out waiting for modem reply"));
             break;
         }
-        gsm_get_reply();
         delay(50);
+        gsm_get_reply();
     }
     show_modem_reply();
 }
@@ -593,7 +594,7 @@ size_t locate_last_line() {
     return pos;
 }
 
-bool gsm_is_final_result(int allowOK) {
+bool gsm_is_final_result(bool allowOK) {
     if (allowOK && gsm_modem_reply_ends_with("\r\nOK\r\n")) {
         return true;
     }
@@ -604,6 +605,9 @@ bool gsm_is_final_result(int allowOK) {
             return true;
         }
         if (gsm_modem_reply_matches(last_line_index+1, "CMS ERROR:")) {
+            return true;
+        }
+        if (gsm_modem_reply_matches(last_line_index+1, "CPIN:")) {
             return true;
         }
         return false;
