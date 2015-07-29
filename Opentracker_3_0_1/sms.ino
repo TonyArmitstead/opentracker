@@ -10,7 +10,9 @@ SMS_CMD_HANDLER smsCommands[] = {
     { "smspass", sms_smspass_handler }, 
     { "pin", sms_pin_handler },
     { "int", sms_int_handler }, 
-    { "locate", sms_locate_handler }
+    { "locate", sms_locate_handler },
+    { "smsnumber", sms_smsnumber_handler },
+    { "smsint", sms_smsint_handler }
 };
 
 const size_t SMS_MAX_CMD_LEN = 80;
@@ -89,126 +91,213 @@ void sms_int_handler(const char* pPhoneNumber, const char* pValue) {
     } else {
         config.interval = updateSecs * 1000;
         save_config = 1;
-        power_reboot = 1;
         sms_send_msg("Update interval saved", pPhoneNumber);
     }
 }
 
 void sms_locate_handler(const char* pPhoneNumber, const char* pValue) {
     debug_println(F("sms_locate_handler(): Locate command received"));
-    char msg[255];
-    if (LOCATE_COMMAND_FORMAT_IOS) {
-        snprintf(msg, 255, "comgooglemaps://?q=%s,%s", lat_current,
-            lon_current);
+    if ((strlen(lat_current) == 0) ||
+        (strlen(lon_current) == 0)) {
+        sms_send_msg("Current location not known yet", pPhoneNumber);
     } else {
-        snprintf(msg, 255, "https://maps.google.co.uk/maps/place/%s,%s",
-            lat_current, lon_current);
+        char msg[255];
+        gps_form_location_url(msg, DIM(msg));
+        sms_send_msg(msg, pPhoneNumber);
     }
-    sms_send_msg(msg, pPhoneNumber);
 }
 
-//check SMS 
-void sms_check() {
-    char index;
-    byte cmd;
-    int reply_index = 0;
-    char *tmp, *tmpcmd;
+void sms_smsnumber_handler(const char* pPhoneNumber, const char* pValue) {
+    debug_print(F("sms_smsnumber_handler(): sms number: "));
+    debug_println(pValue);
+    if (strlen(pValue) > sizeof(config.sms_send_number) - 1) {
+        sms_send_msg("Error: sms number is too long", pPhoneNumber);
+    } else {
+        strcpy(config.sms_send_number, pValue);
+        save_config = 1;
+        sms_send_msg("sms number saved", pPhoneNumber);
+    }
+}
 
+void sms_smsint_handler(const char* pPhoneNumber, const char* pValue) {
+    debug_print(F("sms_smsint_handler(): update sms interval: "));
+    debug_println(pValue);
+    long updateSecs = atol(pValue);
+    if (updateSecs <= 0) {
+        sms_send_msg("Error: bad update interval", pPhoneNumber);
+    } else {
+        config.sms_send_interval = updateSecs * 1000;
+        save_config = 1;
+        sms_send_msg("sms_smsint_handler interval saved", pPhoneNumber);
+    }
+}
+
+/*
+ * Extracts a field from an input string
+ * @param pSource the string containing the input field
+ * @param pDest where to save the extracted field characters
+ * @param sizeDest the size of the buffer pointed to by pDest
+ * @param pTerm a string containing characters which are considered as
+ *        terminating characters for the field
+ * @return a pointer to the input character that terminated the field. This
+ *         could be a pointer to one of the terminator characters, a pointer
+ *         to the end of the input string (i.e. the '\0') or the first
+ *         character past the lat ome stored input pDest due to size
+ *         restrictions.
+ */
+const char* sms_extract_field(
+    const char* pSource,
+    char* pDest,
+    size_t sizeDest,
+    const char* pTerm
+) {
+    size_t idx = 0;
+    // Extract phone number
+    while ((*pSource != '\0') &&
+           (strchr(pTerm, *pSource) == NULL) &&
+           (idx < sizeDest-1))
+        pDest[idx++] = *pSource++;
+    pDest[idx] = '\0';
+    return pSource;
+}
+
+/*
+ * Checks for having received a new text message and processes each new
+ * message.
+ * NOTE:
+ *  We issue the modem AT+CMGL="REC UNREAD" command, which responds with:
+ *    AT+CMGL="REC UNREAD"<CR>
+ *    *{+CMGL: <index>,<stat>,<oa>,[<alpha>],[<scts>]<CR><LF><data><CR><LF>}
+ *    <CR><LF>OK<CR><LF>
+ *  Where:
+ *    <stat>: Status = "REC UNREAD"
+ *    <index>: Index number of the message
+ *    <oa>: Originator address (telephone number)
+ *    <alpha>: Originator name (if available in the phonebook)
+ *    <scts>: Service Center Time Stamp
+ *    <data>: The content of the text message
+ *    <CR>: ASCII character 13
+ *    <LF>: ASCII character 10
+ *  e.g.
+ *    AT+CMGL="REC UNREAD"\r\r\n+CMGL: 1,"REC UNREAD","+44xxxxxxxxxx","","2015/07/28 16:34:03+04"\r\n#xxxx,locate\r\n\r\nOK\r\n
+ */
+void sms_check() {
     debug_println(F("sms_check(): Started"));
+    // Issue command to modem to read all unread messages
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGL=\"REC UNREAD\"");
     gsm_send_command();
-    gsm_wait_at();
-
-    for (int i = 0; i < 30; i++) {
-        if (gsm_port.available()) {
-            while (gsm_port.available()) {
-                index = gsm_port.read();
-                debug_port.print(index);
-                if (index == '#') {
-                    //next data is probably command till \r 
-                    //all data before "," is sms password, the rest is command
-                    cmd = 1;
-                    //get phone number 
-                    modem_reply[reply_index] = '\0';
-                    //phone info will look like this: +CMGL: 10,"REC READ","+436601601234","","5 12:13:17+04"
-                    //phone will start from ","+  and end with ",
-                    tmp = strstr(modem_reply, "+CMGL:");
-                    if (tmp != NULL) {
-                        tmp = strstr(modem_reply, "\",\"+");
-                        tmp += strlen("\",\"+");
-                        tmpcmd = strtok(tmp, "\",\"");
-                    }
-                    reply_index = 0;
-                } else if (index == '\r') {
-                    if (cmd == 1) {
-                        modem_reply[reply_index] = '\0';
-                        sms_cmd(modem_reply, tmpcmd);
-                        reply_index = 0;
-                        cmd = 0;
-                    }
-                } else {
-                    if (cmd == 1) {
-                        modem_reply[reply_index] = index;
-                        reply_index++;
-                    } else {
-                        if (reply_index < 200) {
-                            modem_reply[reply_index] = index;
-                            reply_index++;
-                        } else {
-                            reply_index = 0;
-                        }
-                    }
-                }
-            }
+    gsm_wait_for_reply(true);
+    const char* msgStart = modem_reply;
+    unsigned int msgCount = 0;
+    while (msgStart != NULL) {
+        // Locate start of next message response
+        msgStart = strstr(msgStart, "+CMGL:");
+        // If found ...
+        if (msgStart != NULL) {
+            // ... process the message and move past it
+            msgStart = sms_process(msgStart);
+            ++msgCount;
         }
-        delay(150);
     }
-    //remove all READ and SENT sms   
+    debug_print(F("Processed "));
+    debug_print(msgCount);
+    debug_println(F(" SMS messages"));
+    // remove all READ and SENT sms
     snprintf(modem_command, sizeof(modem_command),
         "AT+QMGDA=\"DEL READ\"");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     snprintf(modem_command, sizeof(modem_command),
         "AT+QMGDA=\"DEL SENT\"");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     debug_println(F("sms_check(): Stopped"));
 }
 
-void sms_cmd(char *cmd, char *phone) {
-    char *tmp;
-    int i = 0;
-
-    //command separated by "," format: password,command=value
-    while ((tmp = strtok_r(cmd, ",", &cmd)) != NULL) {
-        if (i == 0) {
-            //checking password
-            if (strcmp(tmp, config.sms_key) == 0) {
-                sms_cmd_run(cmd, phone);
-                break;
-            } else {
-                debug_print(F("sms_cmd(): SMS password failed: "));
-                debug_println(tmp);
+/*
+ * Consumes the modem response for one SMS message and returns a
+ * pointer to just after the end of the consumed message.
+ * @param msgStart points to the start of the message (->"+CMGL")
+ *    +CMGL: <index>,<stat>,<oa>,[<alpha>],[<scts>]<CR><LF><data><CR><LF>
+ *    e.g.
+ *    +CMGL: 1,"REC UNREAD","+31628870634",,"11/01/09,10:26:26+04"
+ *    This is text message 1
+ * @return pointer to the character after the processed message
+ */
+const char* sms_process(const char* msgStart) {
+    char phoneNumber[MAX_PHONE_NUMBER_LEN+1];
+    char message[SMS_MAX_CMD_LEN+1];
+    const char* pos = strchr(msgStart, ','); // after <index>,
+    if (pos != NULL) {
+        pos = strchr(pos+1, ','); // after <stat>,
+        if (pos != NULL) {
+            if (pos[1] == '"') {
+                pos += 2; // start of phone number
+                pos = sms_extract_field(
+                    pos, phoneNumber, DIM(phoneNumber), "\"");
+                pos = strchr(pos, LF);
+                if (pos != NULL) {
+                    pos += 1; // start of <data>
+                    pos = sms_extract_field(
+                        pos, message, DIM(message), "\r");
+                    sms_cmd(message, phoneNumber);
+                }
             }
         }
-        i++;
+    }
+    return pos;
+}
+
+/*
+ * Process the content of a received SMS message. The message should have the
+ * following format:
+ *   #<sms_key>,<command>=<value>
+ * @param pSMSMessage points to the received SMS message
+ * @param pPhone points to the phone number the SMS message was received from
+ */
+void sms_cmd(char *pSMSMessage, char *pPhone) {
+    const char* pCmd = pSMSMessage;
+    while (isspace(*pCmd))
+        ++pCmd;
+    if (*pCmd != '#') {
+        debug_print(F("sms_cmd(): SMS message did not start with #: "));
+        debug_println(pSMSMessage);
+    } else {
+        ++pCmd; // Skip over '#'
+        char smsKey[MAX_SMS_KEY_LEN+1];
+        // Extract SMS password/key
+        pCmd = sms_extract_field(
+            pCmd, smsKey, DIM(smsKey), ",");
+        if (*pCmd != ',') {
+            debug_print(F("sms_cmd(): SMS message missing SMS key delimiter: "));
+            debug_println(pSMSMessage);
+        } else {
+            if (strcmp(smsKey, config.sms_key) != 0) {
+                debug_print(F("sms_cmd(): SMS message had bad SMS key: "));
+                debug_println(pSMSMessage);
+            } else {
+                pCmd += 1; // Skip over ',' following SMS key
+                sms_cmd_run(pCmd, pPhone);
+            }
+        }
     }
 }
 
-void sms_cmd_run(char *pRequest, char *pPhoneNumber) {
+void sms_cmd_run(const char *pRequest, const char *pPhoneNumber) {
+    char command[SMS_MAX_CMD_LEN + 1];
+    char value[100];
     while (isspace(*pRequest))
         ++pRequest;
-    size_t cmdLen = strcspn(pRequest, "=");
-    char command[SMS_MAX_CMD_LEN + 1];
-    strncpy(command, pRequest, MIN(cmdLen, sizeof(command) - 1));
-    command[sizeof(command) - 1] = '\0';
-    const char* pValue = pRequest + cmdLen + 1;
-    if (pRequest[cmdLen] == '\0') {
-        pValue = NULL;
-    } else {
-        while (isspace(*pValue))
-            ++pValue;
+    // Extract the command
+    pRequest = sms_extract_field(
+        pRequest, command, DIM(command), "=");
+    const char* pValue = NULL;
+    if (*pRequest == '=') {
+        // Extract the value
+        pRequest = sms_extract_field(
+            pRequest, value, DIM(value), "\r");
+        pValue = value;
     }
     bool found = false;
     for (int idx = 0; !found && (idx < DIM(smsCommands)); ++idx) {
@@ -231,9 +320,9 @@ void sms_send_msg(const char *cmd, const char *phone) {
     debug_println(cmd);
 
     snprintf(modem_command, sizeof(modem_command),
-        "AT+CMGS=\"+%s\"", phone);
+        "AT+CMGS=\"%s\"", phone);
     gsm_send_command();
-    gsm_wait_for_reply(0);
+    gsm_wait_for_reply(false);
     char *tmp = strstr(modem_reply, ">");
     if (tmp != NULL) {
         gsm_port.print(cmd);
