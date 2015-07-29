@@ -62,11 +62,11 @@ struct settings {
     byte powersave;
     char key[12]; //key for connection, will be sent with every data transmission
     char sim_pin[5];        //PIN for SIM card
-    char sms_key[12];       //password for SMS commands
+    char sms_key[MAX_SMS_KEY_LEN]; //password for SMS commands
     char imei[20];          //IMEI number
     unsigned long send_flags1; // Bit set of what data to send to server
     unsigned long sms_send_interval; // How often (in ms) to send SMS message containing location data
-    char sms_send_number[16]; // Enough for 15 digit number
+    char sms_send_number[MAX_PHONE_NUMBER_LEN+1];
 };
 
 settings config;
@@ -116,6 +116,9 @@ void setup() {
     pinMode(PIN_S_DETECT, INPUT);
     //set to connect once started
     interval_count = config.interval_send;
+    if (strlen(config.sms_send_number) != 0) {
+        sms_send_msg("System Booted", config.sms_send_number);
+    }
     debug_println(F("setup() completed"));
 }
 
@@ -135,9 +138,6 @@ void loop() {
         data_index = 0;
     }
     status_led();
-    if (!SMS_DONT_CHECK_WITH_ENGINE_RUNNING) {
-        sms_check();
-    }
     // Check if ignition is turned on
     IGNT_STAT = digitalRead(PIN_S_DETECT);
     debug_print(F("Ignition status: "));
@@ -156,10 +156,9 @@ void loop() {
             }
             engineRunning = 1;
         }
-        if (SMS_DONT_CHECK_WITH_ENGINE_RUNNING) {
-            sms_check();
-        }
     }
+    // Process any SMS configuration requests
+    sms_check();
     if (ALWAYS_ON || IGNT_STAT == 0) {
         if (IGNT_STAT == 0) {
             debug_println(F("Ignition is ON!"));
@@ -173,15 +172,6 @@ void loop() {
         }
         debug_print(F("Current: "));
         debug_println(data_current);
-        if (time_diff(time_start, lastSMSSendTime) > SMS_SEND_INTERVAL) {
-            if (strlen(data_current) == 0) {
-                debug_println(F("Was time to send SMS location but no location data available"));
-            } else {
-                debug_println(F("Sending SMS location data"));
-                sms_send_msg(data_current, SMS_SEND_NUMBER);
-                lastSMSSendTime = time_start;
-            }
-        }
         int i = gsm_send_data();
         if (i != 1) {
             debug_println(F("Can not send data"));
@@ -193,6 +183,22 @@ void loop() {
     } else {
         debug_println(F("Ignition is OFF!"));
         // Insert here only code that should be processed when Ignition is OFF 
+    }
+    // Check if sending SMS location updates
+    if ((strlen(config.sms_send_number) != 0) &&
+        (config.sms_send_interval != 0)) {
+        if (time_diff(time_start, lastSMSSendTime) > config.sms_send_interval) {
+            if ((strlen(lat_current) == 0) ||
+                (strlen(lon_current) == 0)) {
+                debug_println(F("Was time to send SMS location but no location data available"));
+            } else {
+                debug_println(F("Sending SMS location data"));
+                char msg[255];
+                gps_form_location_url(msg, DIM(msg));
+                sms_send_msg(msg, config.sms_send_number);
+                lastSMSSendTime = time_start;
+            }
+        }
     }
     if (save_config == 1) {
         //config should be saved
