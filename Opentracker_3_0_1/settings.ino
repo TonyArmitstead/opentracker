@@ -26,6 +26,7 @@ void settings_load() {
     strlcpy(config.pwd, DEFAULT_PASS, sizeof(config.pwd));
     config.sms_send_interval = SMS_SEND_INTERVAL;
     strlcpy(config.sms_send_number, SMS_SEND_NUMBER, sizeof(config.sms_send_number));
+    config.sms_send_flags = SMS_SEND_DEFAULT;
     debug_println(F("settings_load() finished"));
 }
 
