@@ -57,16 +57,17 @@ struct settings {
     char apn[40];
     char user[20];
     char pwd[20];
-    long interval;     //how often to collect data (milli sec, 600000 - 10 mins)
-    int interval_send; //how many times to collect data before sending (times), sending interval interval*interval_send
+    unsigned long interval;     //how often to collect data (milli sec, 600000 - 10 mins)
+    unsigned int interval_send; //how many times to collect data before sending (times), sending interval interval*interval_send
     byte powersave;
     char key[12]; //key for connection, will be sent with every data transmission
     char sim_pin[5];        //PIN for SIM card
     char sms_key[MAX_SMS_KEY_LEN]; //password for SMS commands
     char imei[20];          //IMEI number
-    unsigned long send_flags1; // Bit set of what data to send to server
+    unsigned long server_send_flags; // Bit set of what data to send to server
     unsigned long sms_send_interval; // How often (in ms) to send SMS message containing location data
     char sms_send_number[MAX_PHONE_NUMBER_LEN+1];
+    unsigned long sms_send_flags; // Bit set of what data to send in SMS message
 };
 
 settings config;
@@ -164,26 +165,26 @@ void loop() {
             debug_println(F("Ignition is ON!"));
             // Insert here only code that should be processed when Ignition is ON
         }
-        //collecting GPS data
-        if (SEND_RAW) {
-            collect_all_data_raw(IGNT_STAT);
-        } else {
-            collect_all_data(IGNT_STAT);
-        }
-        debug_print(F("Current: "));
-        debug_println(data_current);
-        int i = gsm_send_data();
-        if (i != 1) {
-            debug_println(F("Can not send data"));
-        } else {
-            debug_println(F("Data sent successfully."));
-        }
-        //reset current data and counter
-        data_index = 0;
     } else {
         debug_println(F("Ignition is OFF!"));
         // Insert here only code that should be processed when Ignition is OFF 
     }
+    //collecting GPS data
+    if (SEND_RAW) {
+        collect_all_data_raw(IGNT_STAT);
+    } else {
+        collect_all_data(IGNT_STAT);
+    }
+    debug_print(F("Current: "));
+    debug_println(data_current);
+    int i = gsm_send_data();
+    if (i != 1) {
+        debug_println(F("Can not send data"));
+    } else {
+        debug_println(F("Data sent successfully."));
+    }
+    //reset current data and counter
+    data_index = 0;
     // Check if sending SMS location updates
     if ((strlen(config.sms_send_number) != 0) &&
         (config.sms_send_interval != 0)) {
@@ -193,8 +194,8 @@ void loop() {
                 debug_println(F("Was time to send SMS location but no location data available"));
             } else {
                 debug_println(F("Sending SMS location data"));
-                char msg[255];
-                gps_form_location_url(msg, DIM(msg));
+                char msg[MAX_SMS_MSG_LEN+1];
+                sms_form_sms_update_str(msg, DIM(msg));
                 sms_send_msg(msg, config.sms_send_number);
                 lastSMSSendTime = time_start;
             }
