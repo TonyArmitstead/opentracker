@@ -14,9 +14,6 @@ void gps_on_off() {
     debug_println(F("gps_on_off() finished"));
 }
 
-// http://updates.geolink.io/index.php?imei=863071016802685&key=v4bfekgcXaa&d=20/06/15,13:15:53+0[200615,13155500,53.850990,-2.984048,0.00,5.30,276.29,83,13]
-
-
 //collect GPS data from serial port
 void collect_gps_data() {
     // String data = "";    
@@ -250,15 +247,55 @@ void collect_gps_data() {
     }
 }
 
-void gps_form_location_url(
+char* calc_snprintf_return_pointer(
+    char* pStr,
+    size_t strSize,
+    int snprintf_len
+) {
+    if (snprintf_len > 0) {
+        if (snprintf_len > strSize) {
+            return pStr + strSize;
+        } else {
+            return pStr + snprintf_len;
+        }
+    } else {
+        return pStr;
+    }
+}
+
+char* gps_form_map_location_url(
     char* pURL,
     size_t urlSize
 ) {
-    if (LOCATE_COMMAND_FORMAT_IOS) {
-        snprintf(pURL, urlSize, "comgooglemaps://?q=%s,%s", lat_current,
-            lon_current);
-    } else {
-        snprintf(pURL, urlSize, "https://maps.google.co.uk/maps/place/%s,%s",
-            lat_current, lon_current);
-    }
+    return calc_snprintf_return_pointer(
+        pURL, urlSize,
+        snprintf(pURL, urlSize,
+                 "comgooglemaps://?q=%s,%s",
+                 lat_current, lon_current)
+    );
 }
+
+char* gps_form_web_location_url(
+    char* pURL,
+    size_t urlSize
+) {
+    return calc_snprintf_return_pointer(
+        pURL, urlSize,
+        snprintf(pURL, urlSize,
+                 "https://maps.google.co.uk/maps/place/%s,%s",
+                 lat_current, lon_current)
+    );
+}
+
+char* gps_form_val_location_str(
+    char* pStr,
+    size_t strSize
+) {
+    return calc_snprintf_return_pointer(
+        pStr, strSize,
+        snprintf(pStr, strSize,
+                 "lat=%s, lon=%s",
+                 lat_current, lon_current)
+    );
+}
+
