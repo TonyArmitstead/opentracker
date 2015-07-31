@@ -34,11 +34,15 @@ struct {
     unsigned int fieldStartPos;
     unsigned int fieldMask;
     const char* fieldValues[4]; // 4 sufficient for 2 bit field, increase if req
+                                // The matching index value is taken to tbe the
+                                // binary field value. Unused index values
+                                // should be filled with an empty string or
+                                // NULL(0)
 } sms_msg_config_fields[] = {
     {"loc",    SMS_SEND_LOCATION_POS, SMS_SEND_LOCATION_MASK,
                {"off","on"}},
     {"locfmt", SMS_SEND_LOCATION_FORMAT_POS, SMS_SEND_LOCATION_FORMAT_MASK,
-               {"web","map","val","?"}},
+               {"web","map","val",""}},
     {"nsat",   SMS_SEND_NSAT_POS, SMS_SEND_NSAT_MASK,
                {"off","on"}},
     {"alt",    SMS_SEND_ALT_POS, SMS_SEND_ALT_MASK,
@@ -86,7 +90,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%snsat=%s", pos == pStr ? "" : ",", "?")
+                     "%snsat=%s", pos == pStr ? "" : ",", "?nsat")
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_ALT_POS)
@@ -96,7 +100,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%salt=%s", pos == pStr ? "" : ",", "?")
+                     "%salt=%s", pos == pStr ? "" : ",", "?alt")
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_SPEED_POS)
@@ -106,7 +110,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sspeed=%s", pos == pStr ? "" : ",", "?")
+                     "%sspeed=%s", pos == pStr ? "" : ",", "?speed")
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_IGN_POS)
@@ -116,7 +120,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sign=%s", pos == pStr ? "" : ",", "?")
+                     "%sign=%s", pos == pStr ? "" : ",", "?ign")
         );
     }
 }
@@ -347,7 +351,7 @@ void sms_form_sms_config_message(
             snprintf(pos, msgLeft,
                      "%s:%s%s",
                      pFieldName,
-                     pFieldValue,
+                     pFieldValue == NULL ? "?" : pFieldValue,
                      idx == DIM(sms_msg_config_fields)-1 ? "" : ","
             )
         );
@@ -380,7 +384,9 @@ bool sms_process_sms_config_field(
              idx < DIM(sms_msg_config_fields) && !fieldProcessedStat;
              ++idx) {
             if (stricmp(sms_msg_config_fields[idx].pFieldName, pFieldName) == 0) {
-                // Known field name :-), so convert field value
+                // Known field name :-), so convert field value string to
+                // its binary value (which is the index into the matching
+                // field values array).
                 for (size_t value=0;
                      value < DIM(sms_msg_config_fields[idx].fieldValues);
                      ++value) {
@@ -396,7 +402,7 @@ bool sms_process_sms_config_field(
                         // Clear the bit(s) in the flag value
                         config.sms_send_flags &= !(fieldMask << fieldStartPos);
                         value &= fieldMask;
-                        config.sms_send_flags &=!(value << fieldStartPos);
+                        config.sms_send_flags |= (value << fieldStartPos);
                         fieldProcessedStat = true;
                     }
                 }
