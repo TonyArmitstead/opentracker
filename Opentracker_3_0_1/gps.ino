@@ -14,6 +14,41 @@ void gps_on_off() {
     debug_println(F("gps_on_off() finished"));
 }
 
+/**
+ * Collect current gps position data
+ * @param pGPSData points to the record to receive the GPS data
+ * @param timeout how long to wait in ms to receive current data
+ */
+bool read_gps_data(
+    GPSDATA_T* pGPSData,
+    unsigned long timeout
+) {
+    bool rStat = false;
+    unsigned long tStart = millis();
+    while ((rStat == false) && time_diff(millis(), tStart) < timeout) {
+        if (gps_port.available()) {
+            int c = gps_port.read();
+            if (gps.encode(c)) {
+                unsigned long fix_age = 0;
+                gps.f_get_position(
+                    &pGPSData->lat, &pGPSData->lon, &fix_age);
+                if ((fix_age != TinyGPS::GPS_INVALID_AGE) &&
+                    (fix_age < 1000)) {
+                    // We have a fix which is < 1s old so consider it
+                    // as current
+                    pGPSData->alt = gps.f_altitude();
+                    pGPSData->course = gps.f_course();
+                    pGPSData->speed = gps.f_speed_kmph();
+                    pGPSData->nsats = gps.satellites();
+                    gps.get_datetime(&pGPSData->date, &pGPSData->time);
+                    rStat = true;
+                }
+            }
+        }
+    }
+    return rStat;
+}
+
 //collect GPS data from serial port
 void collect_gps_data() {
     // String data = "";    
