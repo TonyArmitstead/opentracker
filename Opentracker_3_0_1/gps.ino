@@ -25,261 +25,35 @@ bool read_gps_data(
 ) {
     bool rStat = false;
     unsigned long tStart = millis();
+    // Clear out any buffered received GPS data
+    while (gps_port.available() && time_diff(millis(), tStart) < timeout) {
+        (void)gps_port.read();
+    }
     while ((rStat == false) && time_diff(millis(), tStart) < timeout) {
         if (gps_port.available()) {
+            // As new GPS data arrives, feed it to the gps object until it tells
+            // us it has received a new gps data sentence
             int c = gps_port.read();
             if (gps.encode(c)) {
-                unsigned long fix_age = 0;
                 gps.f_get_position(
-                    &pGPSData->lat, &pGPSData->lon, &fix_age);
-                if ((fix_age != TinyGPS::GPS_INVALID_AGE) &&
-                    (fix_age < 1000)) {
+                    &pGPSData->lat, &pGPSData->lon, &pGPSData->fixAge);
+                if ((pGPSData->fixAge != TinyGPS::GPS_INVALID_AGE) &&
+                    (pGPSData->fixAge < 1000)) {
                     // We have a fix which is < 1s old so consider it
                     // as current
                     pGPSData->alt = gps.f_altitude();
                     pGPSData->course = gps.f_course();
                     pGPSData->speed = gps.f_speed_kmph();
+                    pGPSData->hdop = gps.hdop();
                     pGPSData->nsats = gps.satellites();
                     gps.get_datetime(&pGPSData->date, &pGPSData->time);
+                    blink_got_gps();
                     rStat = true;
                 }
             }
         }
     }
     return rStat;
-}
-
-//collect GPS data from serial port
-void collect_gps_data() {
-    // String data = "";    
-    byte index = 0;
-    byte fix = 0;
-    int retry = 0;
-    char tmp[15];
-    float flat, flon;
-    unsigned long fix_age, time_gps, date_gps, speed, course, alt;
-    unsigned long chars;
-    unsigned short sentences, failed_checksum;
-
-    //repeat many time before valid fix found
-    for (int i = 0; i < 1000; i++) {
-        while (gps_port.available()) {
-            char c = gps_port.read();
-            index++;
-            //debug
-            debug_port.print(c);
-            if (fix == 1) { //fix already acquired
-                debug_println(F("GPS already available, breaking"));
-                break;
-            }
-            if (gps.encode(c)) {
-                // process new gps info here
-                //construct GPS line
-                //check if altitude acquired, otherwise continue
-                float falt = gps.f_altitude(); // +/- altitude in meters
-                float fc = gps.f_course(); // course in degrees
-                float fkmph = gps.f_speed_kmph(); // speed in km/hr
-                // time in hhmmsscc, date in ddmmyy
-                gps.get_datetime(&date_gps, &time_gps, &fix_age);
-                //retry to get fix in case no valid altitude or course supplied (max 10 times) 
-                if (retry < 10) {
-                    if (falt == 1000000) {
-                        debug_println(F("Invalid altitude, retrying."));
-                        retry++;
-                        i = 0; //reset main try counter
-                        continue;
-                    }
-                    if (fc == 0) {
-                        debug_println(F("Invalid course, retrying."));
-                        retry++;
-                        i = 0; //reset main try counter
-                        continue;
-                    }
-                    if (date_gps == 0) {
-                        debug_println(F("Invalid date, retrying."));
-                        retry++;
-                        i = 0; //reset main try counter
-                        continue;
-                    }
-                }
-                debug_println(F("GPS fix received."));
-                gps.f_get_position(&flat, &flon, &fix_age);
-                //check if this fix is already received
-                if ((last_time_gps == time_gps)
-                    && (last_date_gps == date_gps)) {
-                    debug_println(
-                        F("Warning: this fix date/time already logged, retrying"));
-                    continue;
-                }
-                fix = 1;
-                if (fix_age == TinyGPS::GPS_INVALID_AGE)
-                    debug_println(F("No fresh fix detected"));
-                else if (fix_age > 1000)
-                    debug_println(F("Warning: possible stale data!"));
-                else {
-                    debug_println(F("Data is current."));
-                    //update current time var - format 04/12/98,00:15:45+00
-                    ltoa(date_gps, tmp, 10);  //ddmmyy                    
-                    if (strlen(tmp) == 5) {
-                        //add zero to day 
-                        time_char[0] = '0';
-                        time_char[1] = tmp[0];
-                        time_char[2] = '/';
-                        time_char[3] = tmp[1];
-                        time_char[4] = tmp[2];
-                        time_char[5] = '/';
-                        time_char[6] = tmp[3];
-                        time_char[7] = tmp[4];
-                        time_char[8] = ',';
-                    } else {
-                        time_char[0] = tmp[0];
-                        time_char[1] = tmp[1];
-                        time_char[2] = '/';
-                        time_char[3] = tmp[2];
-                        time_char[4] = tmp[3];
-                        time_char[5] = '/';
-                        time_char[6] = tmp[4];
-                        time_char[7] = tmp[5];
-                        time_char[8] = ',';
-                    }
-                    ltoa(time_gps, tmp, 10);  //hhmmssms - 13245000
-                    if (strlen(tmp) == 7) {
-                        time_char[9] = '0';
-                        time_char[10] = tmp[0];
-                        time_char[11] = ':';
-                        time_char[12] = tmp[1];
-                        time_char[13] = tmp[2];
-                        time_char[14] = ':';
-                        time_char[15] = tmp[3];
-                        time_char[16] = tmp[4];
-                        time_char[17] = '+';
-                        time_char[18] = '0';
-                        time_char[19] = '0';
-                        time_char[20] = '\0';
-                    } else {
-                        time_char[9] = tmp[0];
-                        time_char[10] = tmp[1];
-                        time_char[11] = ':';
-                        time_char[12] = tmp[2];
-                        time_char[13] = tmp[3];
-                        time_char[14] = ':';
-                        time_char[15] = tmp[4];
-                        time_char[16] = tmp[5];
-                        time_char[17] = '+';
-                        time_char[18] = '0';
-                        time_char[19] = '0';
-                        time_char[20] = '\0';
-                    }
-                    debug_print(F("Current time set from GPS time: "));
-                    debug_println(time_char);
-                    //set modem time from fresh fix  
-                    gsm_set_time();
-                }
-                int first_gps_item = 0;
-                if (DATA_INCLUDE_GPS_DATE) {
-//                    data_current[data_index++] = ',';
-                    //converting date to data packet                    
-                    ltoa(date_gps, tmp, 10);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index] = tmp[i];
-                        data_index++;
-                    }
-                }
-                if (DATA_INCLUDE_GPS_TIME) {
-                    data_current[data_index++] = ',';
-                    //time
-                    ltoa(time_gps, tmp, 10);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index] = tmp[i];
-                        data_index++;
-                    }
-                }
-                if (DATA_INCLUDE_LATITUDE) {
-                    data_current[data_index++] = ',';
-                    dtostrf(flat, 1, 6, tmp);
-                    dtostrf(flat, 1, 6, lat_current);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                if (DATA_INCLUDE_LONGITUDE) {
-                    data_current[data_index++] = ',';
-                    dtostrf(flon, 1, 6, tmp);
-                    dtostrf(flon, 1, 6, lon_current);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-
-                if (DATA_INCLUDE_SPEED) {
-                    data_current[data_index++] = ',';
-                    dtostrf(fkmph, 1, 2, tmp);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                if (DATA_INCLUDE_ALTITUDE) {
-                    data_current[data_index++] = ',';
-                    dtostrf(falt, 1, 2, tmp);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                if (DATA_INCLUDE_HEADING) {
-                    data_current[data_index++] = ',';
-                    dtostrf(fc, 1, 2, tmp);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                if (DATA_INCLUDE_HDOP) {
-                    data_current[data_index++] = ',';
-                    long hdop = gps.hdop(); //hdop
-                    ltoa(hdop, tmp, 10);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                if (DATA_INCLUDE_SATELLITES) {
-                    data_current[data_index++] = ',';
-                    long sats = gps.satellites(); //satellites          
-                    ltoa(sats, tmp, 10);
-                    for (int i = 0; i < strlen(tmp); i++) {
-                        data_current[data_index++] = tmp[i];
-                    }
-                }
-                //save last gps data date/time
-                last_time_gps = time_gps;
-                last_date_gps = date_gps;
-                blink_got_gps();
-            }
-            //timeout
-            if (index > 10000) {
-                debug_println(F("collect_gps_data() timeout"));
-                break;
-            }
-        }
-        if (fix == 1) {
-            //fix was found
-            debug_println(F("collect_gps_data(): fix acquired"));
-            break;
-        } else {
-            //blink GPS activity
-            if (ledState == LOW)
-                ledState = HIGH;
-            else
-                ledState = LOW;
-            // set the LED with the ledState of the variable:
-            digitalWrite(PIN_POWER_LED, ledState);
-            delay(12);
-        }
-    }
-    gps.stats(&chars, &sentences, &failed_checksum);
-    debug_print(F("Failed checksums: "));
-    debug_println(failed_checksum);
-    if (fix != 1) {
-        debug_println(F("collect_gps_data(): fix not acquired, given up."));
-    }
 }
 
 char* calc_snprintf_return_pointer(
@@ -300,37 +74,40 @@ char* calc_snprintf_return_pointer(
 
 char* gps_form_map_location_url(
     char* pURL,
-    size_t urlSize
+    size_t urlSize,
+    GPSDATA_T* pGPSData
 ) {
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-                 "comgooglemaps://?q=%s,%s",
-                 lat_current, lon_current)
+                 "comgooglemaps://?q=%.6f,%.6f",
+                 pGPSData->lat, pGPSData->lon)
     );
 }
 
 char* gps_form_web_location_url(
     char* pURL,
-    size_t urlSize
+    size_t urlSize,
+    GPSDATA_T* pGPSData
 ) {
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-                 "https://maps.google.co.uk/maps/place/%s,%s",
-                 lat_current, lon_current)
+                 "https://maps.google.co.uk/maps/place/%.6f,%.6f",
+                 pGPSData->lat, pGPSData->lon)
     );
 }
 
 char* gps_form_val_location_str(
     char* pStr,
-    size_t strSize
+    size_t strSize,
+    GPSDATA_T* pGPSData
 ) {
     return calc_snprintf_return_pointer(
         pStr, strSize,
         snprintf(pStr, strSize,
-                 "lat=%s, lon=%s",
-                 lat_current, lon_current)
+                 "lat=%.6f, lon=%.6f",
+                 pGPSData->lat, pGPSData->lon)
     );
 }
 

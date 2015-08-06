@@ -60,17 +60,6 @@ void gsm_send_tcp_data() {
     gsm_port.print(modem_data);
 }
 
-void gsm_set_time() {
-    int i;
-    debug_println(F("gsm_set_time() started"));
-    //setting modems clock from current time var
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+CCLK=\"%s\"", time_char);
-    gsm_send_command();
-    gsm_wait_for_reply(1);
-    debug_println(F("gsm_set_time() completed"));
-}
-
 void gsm_set_pin() {
     debug_println(F("gsm_set_pin() started"));
     //checking if PIN is set 
@@ -110,9 +99,16 @@ void gsm_set_pin() {
     debug_println(F("gsm_set_pin() completed"));
 }
 
-void gsm_get_time() {
+/**
+ * Reads a time string from the modem
+ * @param pStr points to where to write the string
+ * @param strSize the storage size for pStr
+ */
+void gsm_get_time(
+    char* pStr,
+    size_t strSize
+) {
     int i;
-    debug_println(F("gsm_get_time() started"));
     //clean any serial data       
     gsm_get_reply();
     //get time from modem
@@ -125,16 +121,13 @@ void gsm_get_time() {
     char *tmpval = strtok(tmp, "\"");
     //copy data to main time var
     for (i = 0; i < strlen(tmpval); i++) {
-        time_char[i] = tmpval[i];
+        pStr[i] = tmpval[i];
         if (i > 17) {  //time can not exceed 20 chars
             break;
         }
     }
     //null terminate time
-    time_char[i + 1] = '\0';
-    debug_print(F("gsm_get_time() result: "));
-    debug_println(time_char);
-    debug_println(F("gsm_get_time() completed"));
+    pStr[i + 1] = '\0';
 }
 
 void gsm_startup_cmd() {
@@ -302,15 +295,17 @@ int gsm_validate_tcp() {
     return ret;
 }
 
-void gsm_send_http_current() {
+void gsm_send_http_current(
+    const char* pServerMsg
+) {
     //send HTTP request, after connection if fully opened
     //this will send Current data
     debug_print(F("gsm_send_http(): sending data: "));
-    debug_println(data_current);
+    debug_println(pServerMsg);
     //sending header                     
     snprintf(modem_data, sizeof(modem_data),
         "%s%d%s",
-        HTTP_HEADER1, 13 + strlen(config.imei) + strlen(config.key) + strlen(data_current), HTTP_HEADER2);
+        HTTP_HEADER1, 13 + strlen(config.imei) + strlen(config.key) + strlen(pServerMsg), HTTP_HEADER2);
     //sending header packet to remote host
     snprintf(modem_command, sizeof(modem_command),
         "AT+QISEND=%d",
@@ -322,7 +317,7 @@ void gsm_send_http_current() {
     //sending imei and key first
     snprintf(modem_data, sizeof(modem_data),
         "imei=%s&key=%s&d=%s",
-        config.imei, config.key, data_current);
+        config.imei, config.key, pServerMsg);
     snprintf(modem_command, sizeof(modem_command),
         "AT+QISEND=%d",
         strlen(modem_data));
@@ -331,7 +326,7 @@ void gsm_send_http_current() {
     gsm_send_tcp_data();
     gsm_validate_tcp();
 #if 0  
-    tmp_len = strlen(data_current);
+    tmp_len = strlen(pServerMsg);
     int chunk_len;
     int chunk_pos = 0;
     int chunk_check = 0;
@@ -365,7 +360,7 @@ void gsm_send_http_current() {
             gsm_wait_for_reply(1);
         }
         //sending data 
-        gsm_port.print(data_current[i]);
+        gsm_port.print(pServerMsg[i]);
         chunk_pos++;
         k++;
     }
@@ -373,13 +368,15 @@ void gsm_send_http_current() {
     debug_println(F("gsm_send_http(): data sent."));
 }
 
-void gsm_send_raw_current() {
+void gsm_send_raw_current(
+    const char* pServerMsg
+) {
     //send raw TCP request, after connection if fully opened
     //this will send Current data
     debug_print(F("gsm_send_raw(): sending data: "));
-    debug_println(data_current);
+    debug_println(pServerMsg);
 
-    int tmp_len = strlen(data_current);
+    int tmp_len = strlen(pServerMsg);
     int chunk_len;
     int chunk_pos = 0;
     int chunk_check = 0;
@@ -414,14 +411,16 @@ void gsm_send_raw_current() {
             gsm_wait_for_reply(1);
         }
         //sending data
-        gsm_port.print(data_current[i]);
+        gsm_port.print(pServerMsg[i]);
         chunk_pos++;
         k++;
     }
     debug_println(F("gsm_send_raw(): data sent."));
 }
 
-int gsm_send_data() {
+int gsm_send_data(
+    const char* pServerMsg
+) {
     int ret_tmp = 0;
 
     //send 2 ATs
@@ -449,9 +448,9 @@ int gsm_send_data() {
     if (ret_tmp == 1) {
         //connection opened, just send data 
         if (SEND_RAW) {
-            gsm_send_raw_current();
+            gsm_send_raw_current(pServerMsg);
         } else {
-            gsm_send_http_current();  //send all current data
+            gsm_send_http_current(pServerMsg);  //send all current data
         }
         gsm_wait_for_reply(1);
         if (!SEND_RAW) {

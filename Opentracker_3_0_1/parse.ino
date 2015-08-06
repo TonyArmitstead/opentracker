@@ -74,31 +74,9 @@ int parse_receive_reply() {
 
 void parse_cmd(char *cmd) {
     //parse commands info received from the server
-    char *tmp;
-    char *tmpcmd;
-
     debug_println(F("parse_cmd() started"));
     debug_print(F("Received commands: "));
     debug_println(cmd);
-
-    //check for settime command (#t:13/01/11,09:43:50+00)
-    tmp = strstr((cmd), "#t:");
-    if (tmp != NULL) {
-        debug_println(F("Found settime command."));
-        tmp = strstr(cmd, "#t:");  //\r\n\r\n
-        tmp += strlen("#t:");
-        tmpcmd = strtok(tmp, "\n");   //all commands end with \n
-        debug_println(tmpcmd);
-        if (strlen(tmpcmd) == 20) {
-            debug_println(F("Valid time string found."));
-            //setting current time
-            for (int i = 0; i < strlen(tmpcmd); i++) {
-                time_char[i] = tmpcmd[i];
-            }
-            time_char[20] = '\0';
-            gsm_set_time();
-        }
-    }
     debug_println(F("parse_cmd() completed"));
 }
 

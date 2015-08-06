@@ -1,4 +1,5 @@
 void storage_save_current() {
+#if STORAGE
     debug_println(F("storage_save_current() started"));
     //saving data_current to flash memory    
     for (int i = 0; i < strlen(data_current); i++) {
@@ -15,9 +16,11 @@ void storage_save_current() {
     //adding index marker, it will be overwritten with next flash write
     dueFlashStorage.write(logindex, STORAGE_INDEX_CHAR);  //35 = #
     debug_println(F("storage_save_current() ended"));
+#endif
 }
 
 void storage_get_index() {
+#if STORAGE
     byte c;
 
     debug_println(F("store_get_index() started"));
@@ -33,10 +36,12 @@ void storage_get_index() {
         }
     }
     debug_println(F("store_get_index() ended"));
+#endif
 }
 
 void storage_send_logs() {
-    long index_tmp;
+#if STORAGE
+	long index_tmp;
     long sent_position = STORAGE_DATA_START; //by default sent from the beggining
     byte sent = 0;
     byte c;
@@ -182,11 +187,13 @@ void storage_send_logs() {
         debug_println(F("storage_send_logs(): No logs present"));
     }
     debug_println(F("storage_send_logs() ended"));
+#endif
 }
 
 //debug function 
 void storage_dump() {
-    byte c;
+#if STORAGE
+	byte c;
 
     debug_println(F("storage_dump() started"));
     //lilsting contents of flash
@@ -199,5 +206,6 @@ void storage_dump() {
     }
     debug_println(F(""));
     debug_println(F("storage_dump() ended"));
+#endif
 }
 

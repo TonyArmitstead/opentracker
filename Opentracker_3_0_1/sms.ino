@@ -2,43 +2,50 @@
  * Each SMS command handler is identified by a string and a function to
  * handle the command value
  */
-typedef struct SMS_CMD_HANDLER {
+typedef struct SMS_CMD_HANDLER_S {
     const char* pCommandName;
     void (*SMSCmdHandler)(const char* pPhoneNumber, const char* pValue);
-};
+} SMS_CMD_HANDLER_T;
 /**
  * The set of supported SMS commands
  */
-SMS_CMD_HANDLER smsCommands[] = {
+SMS_CMD_HANDLER_T smsCommands[] = {
     { "apn", sms_apn_handler }, 
     { "gprspass", sms_gprspass_handler }, 
     { "gprsuser", sms_gprsuser_handler }, 
     { "smskey", sms_smskey_handler },
     { "pin", sms_pin_handler },
-    { "int", sms_int_handler }, 
+    { "sint", sms_sint_handler },
+    { "fint", sms_fint_handler },
     { "locate", sms_locate_handler },
     { "smsnumber", sms_smsnumber_handler },
     { "smsfreq", sms_smsfreq_handler },
-    { "smssend", sms_smssend_handler }
+    { "smssend", sms_smssend_handler },
+    { "srvsend", sms_srvsend_handler }
 };
 /**
  * Max size of an SMS command string
  */
 const size_t SMS_MAX_CMD_LEN = 40;
 /**
- * Declare the known SMS configuration field names and bit positions, along
- * with the set of allowed values (mapped to strings)
+ * Declare a structure for defining a bit field within an integer value
  */
-struct {
-    const char* pFieldName;
-    unsigned int fieldStartPos;
-    unsigned int fieldMask;
+typedef struct SMS_FIELD_SPEC_S {
+    const char* pFieldName;		// The name of the field
+    unsigned int fieldStartPos;	// The position of the field LSB
+    unsigned int fieldMask;		// A mask for the field assuming it has
+    							    // been right justified (starts at bit 0)
     const char* fieldValues[4]; // 4 sufficient for 2 bit field, increase if req
                                 // The matching index value is taken to tbe the
                                 // binary field value. Unused index values
                                 // should be filled with an empty string or
                                 // NULL(0)
-} sms_msg_config_fields[] = {
+} SMS_FIELD_SPEC_T;
+/**
+ * Declare the known SMS configuration field names and bit positions, along
+ * with the set of allowed values (mapped to strings)
+ */
+SMS_FIELD_SPEC_T sms_msg_config_fields[] = {
     {"loc",    SMS_SEND_LOCATION_POS, SMS_SEND_LOCATION_MASK,
                {"off","on"}},
     {"locfmt", SMS_SEND_LOCATION_FORMAT_POS, SMS_SEND_LOCATION_FORMAT_MASK,
@@ -54,13 +61,39 @@ struct {
 };
 
 /**
+ * Declare the known Server configuration field names and bit positions, along
+ * with the set of allowed values (mapped to strings)
+ */
+#define SMS_SERVER_SEND(field, name) \
+    {field, SERVER_SEND_##name##_POS, SERVER_SEND_##name##_MASK, {"off", "on"}}
+    
+SMS_FIELD_SPEC_T sms_server_config_fields[] = {
+	SMS_SERVER_SEND("date", GPSDATE),
+	SMS_SERVER_SEND("time", GPSTIME),
+	SMS_SERVER_SEND("lat", LATITUDE),
+	SMS_SERVER_SEND("lon", LONGITUDE),
+	SMS_SERVER_SEND("speed", SPEED),
+	SMS_SERVER_SEND("alt", ALTITUDE),
+	SMS_SERVER_SEND("head", HEADING),
+	SMS_SERVER_SEND("hdop", HDOP),
+	SMS_SERVER_SEND("nsat", NSAT),
+	SMS_SERVER_SEND("bat", BATT),
+	SMS_SERVER_SEND("ign", IGN),
+	SMS_SERVER_SEND("run", RUNTIME)
+};
+
+/**
  * Forms a string containing the configured set of SMS data return values
  * @param pStr points to where to write the string
  * @param strSize the storage size for pStr
+ * @param pGPSData points to the GPS data to send
+ * @param ignState ignition state, true for ON
  */
 void sms_form_sms_update_str(
     char* pStr,
-    size_t strSize
+    size_t strSize,
+    GPSDATA_T* pGPSData,
+	bool ignState
 ) {
     char* pos = pStr;
     if (((config.sms_send_flags >> SMS_SEND_LOCATION_POS)
@@ -73,13 +106,13 @@ void sms_form_sms_update_str(
         switch (((config.sms_send_flags >> SMS_SEND_LOCATION_FORMAT_POS)
                                          & SMS_SEND_LOCATION_FORMAT_MASK)) {
         case SMS_SEND_LOCATION_FORMAT_MAP:
-            pos = gps_form_map_location_url(pos, strSize - (pos-pStr));
+            pos = gps_form_map_location_url(pos, strSize - (pos-pStr), pGPSData);
             break;
         case SMS_SEND_LOCATION_FORMAT_WEB:
-            pos = gps_form_web_location_url(pos, strSize - (pos-pStr));
+            pos = gps_form_web_location_url(pos, strSize - (pos-pStr), pGPSData);
             break;
         case SMS_SEND_LOCATION_FORMAT_VAL:
-            pos = gps_form_val_location_str(pos, strSize - (pos-pStr));
+            pos = gps_form_val_location_str(pos, strSize - (pos-pStr), pGPSData);
             break;
         }
     }
@@ -90,7 +123,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%snsat=%s", pos == pStr ? "" : ",", "?nsat")
+                     "%snsat=%ul", pos == pStr ? "" : ",", pGPSData->nsats)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_ALT_POS)
@@ -100,7 +133,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%salt=%s", pos == pStr ? "" : ",", "?alt")
+                     "%salt=%.1f", pos == pStr ? "" : ",", pGPSData->alt)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_SPEED_POS)
@@ -110,7 +143,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sspeed=%s", pos == pStr ? "" : ",", "?speed")
+                     "%sspeed=%s.1f", pos == pStr ? "" : ",", pGPSData->speed)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_IGN_POS)
@@ -120,7 +153,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sign=%s", pos == pStr ? "" : ",", "?ign")
+                     "%sign=%s", pos == pStr ? "" : ",", ignState ? "ON" : "OFF")
         );
     }
 }
@@ -220,22 +253,42 @@ void sms_pin_handler(
 }
 
 /**
- * Handles the SMS set int command
+ * Handles the SMS set sint command
  * @param pPhoneNumber points to the text phone number we send any response to
- * @param pValue points to the new time string value (in secs) for the gps
+ * @param pValue points to the new time string value (in secs) for the slow gps
  *        data update interval
  */
-void sms_int_handler(
+void sms_sint_handler(
     const char* pPhoneNumber,
     const char* pValue
 ) {
-    long updateSecs = atol(pValue);
-    if (updateSecs <= 0) {
-        sms_send_msg("Error: bad update interval", pPhoneNumber);
+    unsigned long updateSecs = strtoul(pValue, NULL, 0);
+    if ((updateSecs == 0) || (updateSecs > config.fast_server_interval)) {
+        sms_send_msg("Error: bad slow update interval", pPhoneNumber);
     } else {
-        config.interval = updateSecs * 1000;
+        config.slow_server_interval = updateSecs;
         save_config = 1;
-        sms_send_msg("Update interval saved", pPhoneNumber);
+        sms_send_msg("Slow update interval saved", pPhoneNumber);
+    }
+}
+
+/**
+ * Handles the SMS set fint command
+ * @param pPhoneNumber points to the text phone number we send any response to
+ * @param pValue points to the new time string value (in secs) for the fast gps
+ *        data update interval
+ */
+void sms_fint_handler(
+    const char* pPhoneNumber,
+    const char* pValue
+) {
+    unsigned long updateSecs = strtoul(pValue, NULL, 0);
+    if ((updateSecs == 0) || (updateSecs < config.slow_server_interval)) {
+        sms_send_msg("Error: bad fast update interval", pPhoneNumber);
+    } else {
+        config.fast_server_interval = updateSecs;
+        save_config = 1;
+        sms_send_msg("Fast update interval saved", pPhoneNumber);
     }
 }
 
@@ -248,12 +301,11 @@ void sms_locate_handler(
     const char* pPhoneNumber,
     const char* pValue
 ) {
-    if ((strlen(lat_current) == 0) ||
-        (strlen(lon_current) == 0)) {
+    if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
         sms_send_msg("Current location not known yet", pPhoneNumber);
     } else {
         char msg[MAX_SMS_MSG_LEN+1];
-        sms_form_sms_update_str(msg, DIM(msg));
+        sms_form_sms_update_str(msg, DIM(msg), &lastGoodGPSData, ignState);
         sms_send_msg(msg, pPhoneNumber);
     }
 }
@@ -326,25 +378,31 @@ const char* sms_extract_field(
 }
 
 /**
- * Forms a string containing all of the known SMS configuration field values
+ * Forms a string containing all of the known configuration field values
  * @param pMsg where to store the string
  * @param msgSize the size of the storage available for pMsg
+ * @param fieldValues the current field value set
+ * @param pFieldSpecs the set of known fields
+ * @param fieldCount the number of field specs pointed to by pFieldSpecs
  */
-void sms_form_sms_config_message(
+void sms_form_field_config_message(
     char* pMsg,
-    size_t msgSize
+    size_t msgSize,
+	unsigned long fieldValues,
+	const struct SMS_FIELD_SPEC_S* pFieldSpecs,
+	size_t fieldCount
 ) {
     char* pos = pMsg;
     size_t msgLeft = msgSize;
     // For each known field ...
-    for (size_t idx=0; (idx < DIM(sms_msg_config_fields)) && (msgLeft > 0); ++idx) {
+    for (size_t idx=0; (idx < fieldCount) && (msgLeft > 0); ++idx) {
         // Get the binary field value
         unsigned int fieldValue =
-            (config.sms_send_flags >> sms_msg_config_fields[idx].fieldStartPos)
-                                    & sms_msg_config_fields[idx].fieldMask;
+            (fieldValues >> pFieldSpecs[idx].fieldStartPos)
+                          & pFieldSpecs[idx].fieldMask;
         // Map the value to a string
-        const char* pFieldValue = sms_msg_config_fields[idx].fieldValues[fieldValue];
-        const char* pFieldName = sms_msg_config_fields[idx].pFieldName;
+        const char* pFieldValue = pFieldSpecs[idx].fieldValues[fieldValue];
+        const char* pFieldName = pFieldSpecs[idx].pFieldName;
         // Output the field string as name:value[,]
         pos = calc_snprintf_return_pointer(
             pos, msgLeft,
@@ -352,7 +410,7 @@ void sms_form_sms_config_message(
                      "%s:%s%s",
                      pFieldName,
                      pFieldValue == NULL ? "?" : pFieldValue,
-                     idx == DIM(sms_msg_config_fields)-1 ? "" : ","
+                     idx == fieldCount-1 ? "" : ","
             )
         );
         // Calc space available for the next snprintf call
@@ -361,48 +419,57 @@ void sms_form_sms_config_message(
 }
 
 /**
- * Sets an SMS configuration field
+ * Sets a configuration field value
  * @param pFieldName points to the field name
  * @param pFieldValue points to the field value
+ * @param pFieldSpecs the set of known fields
+ * @param fieldCount the number of field specs pointed to by pFieldSpecs
+ * @param defaultValue the default value for the field set
+ * @param pCurValues points to the current field set values that we will
+ *        modify
  * @return true if field name/value processed OK
  *         false if field name is not known or field value is not a
  *         recognised value
  */
-bool sms_process_sms_config_field(
-    const char* pFieldName, 
-    const char* pFieldValue
+bool sms_process_config_field(
+    const char* pFieldName,
+    const char* pFieldValue,
+	const struct SMS_FIELD_SPEC_S* pFieldSpecs,
+	size_t fieldCount,
+	unsigned long defaultValues,
+	unsigned long* pCurValues
 ) {
     bool fieldProcessedStat = false;
     if (stricmp(pFieldName, "default") == 0) {
         if (stricmp(pFieldValue, "on") == 0) {
-            config.sms_send_flags = SMS_SEND_DEFAULT;
+            *pCurValues = defaultValues;
             fieldProcessedStat = true;
         }
     } else {
         // For each known field ...
         for (size_t idx=0;
-             idx < DIM(sms_msg_config_fields) && !fieldProcessedStat;
+             (idx < fieldCount) && !fieldProcessedStat;
              ++idx) {
-            if (stricmp(sms_msg_config_fields[idx].pFieldName, pFieldName) == 0) {
+            if (stricmp(pFieldSpecs[idx].pFieldName, pFieldName) == 0) {
                 // Known field name :-), so convert field value string to
                 // its binary value (which is the index into the matching
                 // field values array).
                 for (size_t value=0;
-                     value < DIM(sms_msg_config_fields[idx].fieldValues);
+                     value < DIM(pFieldSpecs[idx].fieldValues);
                      ++value) {
                     const char* pTestValue =
-                        sms_msg_config_fields[idx].fieldValues[value];
+                    		pFieldSpecs[idx].fieldValues[value];
                     if ((pTestValue != NULL) &&
                         (stricmp(pTestValue, pFieldValue) == 0)) {
                         // Field value string located
                         unsigned int fieldMask =
-                            sms_msg_config_fields[idx].fieldMask;
+                        		pFieldSpecs[idx].fieldMask;
                         unsigned int fieldStartPos =
-                            sms_msg_config_fields[idx].fieldStartPos;
+                        		pFieldSpecs[idx].fieldStartPos;
                         // Clear the bit(s) in the flag value
-                        config.sms_send_flags &= !(fieldMask << fieldStartPos);
+                        *pCurValues &= !(fieldMask << fieldStartPos);
                         value &= fieldMask;
-                        config.sms_send_flags |= (value << fieldStartPos);
+                        *pCurValues |= (value << fieldStartPos);
                         fieldProcessedStat = true;
                     }
                 }
@@ -453,7 +520,11 @@ void sms_smssend_handler(
             pos = sms_extract_field(pos, fieldName, DIM(fieldName)-1, ",");
             if (*pos == ',') {
                 pos += 1;
-                if (!sms_process_sms_config_field(fieldName, fieldValue)) {
+                if (!sms_process_config_field(
+                		fieldName, fieldValue,
+						sms_msg_config_fields, DIM(sms_msg_config_fields),
+						SMS_SEND_DEFAULT, &config.sms_send_flags
+                		)) {
                     sms_send_msg("Bad SMS field name or field value", pPhoneNumber);
                     pos = NULL; // Abandon processing the message
                 }
@@ -464,7 +535,78 @@ void sms_smssend_handler(
         }
     }
     char msg[MAX_SMS_MSG_LEN+1];
-    sms_form_sms_config_message(msg, DIM(msg));
+    sms_form_field_config_message(
+    	msg, DIM(msg), config.sms_send_flags,
+		sms_msg_config_fields, DIM(sms_msg_config_fields));
+    sms_send_msg(msg, pPhoneNumber);
+}
+
+/**
+ * Configures what information is included in a server update message and send
+ * a return message showing the current set of server update configuration
+ * values
+ * @param pPhoneNumber points to the text phone number we send any response to
+ * @param pValue points to the configuration information, defined as follows:
+ *        Server message configuration changes the state of the
+ *        config.server_send_flags. Each flag (or configuration field) can be
+ *        set individually by sending a ',' separated list of field names and
+ *        values. The name and value are separated by ':'.
+ *        If pValue is NULL, we respond with the current configuration values.
+ *        Supported field names:values (all case insensitive) are:
+ *          date:<on,off>
+ *          time:<on,off>
+ *          lat:<on,off>
+ *          lon:<on,off>
+ *          speed:<on,off>
+ *          alt:<on,off>
+ *          head:<on,off>
+ *          hdop:<on,off>
+ *          nsat:<on,off>
+ *          batn:<on,off>
+ *          ign:<on,off>
+ *          run:<on,off>
+ *        There is also the special field name 'default' which restores the
+ *        default configuration values
+ *          default:on
+ *        Examples of configuration strings:
+ *          lat:on,lon:on,speed:off
+ *          default:on
+ */
+void sms_srvsend_handler(
+    const char* pPhoneNumber,
+    const char* pValue
+) {
+    const char* pos = pValue;
+    while ((pos != NULL) && (*pos != '\0')) {
+        char fieldName[20];
+        char fieldValue[20];
+        pos = sms_extract_field(pos, fieldName, DIM(fieldName)-1, ":");
+        if (*pos != ':') {
+            sms_send_msg("serverfield name too long or missing ':'", pPhoneNumber);
+            pos = NULL; // Abandon processing the message
+        } else {
+            pos += 1;
+            pos = sms_extract_field(pos, fieldName, DIM(fieldName)-1, ",");
+            if (*pos == ',') {
+                pos += 1;
+                if (!sms_process_config_field(
+                		fieldName, fieldValue,
+						sms_server_config_fields, DIM(sms_server_config_fields),
+						SERVER_SEND_DEFAULT, &config.server_send_flags
+                		)) {
+                    sms_send_msg("Bad server field name or field value", pPhoneNumber);
+                    pos = NULL; // Abandon processing the message
+                }
+            } else if (*pos != '\0') {
+                sms_send_msg("server field value too long", pPhoneNumber);
+                pos = NULL; // Abandon processing the message
+            }
+        }
+    }
+    char msg[MAX_SMS_MSG_LEN+1];
+    sms_form_field_config_message(
+    	msg, DIM(msg), config.server_send_flags,
+		sms_server_config_fields, DIM(sms_server_config_fields));
     sms_send_msg(msg, pPhoneNumber);
 }
 

@@ -1,136 +1,141 @@
-//collect GPS data for sending 
+/**
+ * Form server update message
+ * @param pGPSData points to the GPS data record
+ * @param pMsg where to store the server update message
+ * @param msgSize the size of the storage available for pMsg
+ * @param ignState ignition state, true for ON
+ * @return true if message formed OK, false if message not formed OK due to
+ *         either something wrong with the GPS data or the message is not
+ *         big enough to old the configured data set
+ */
+bool form_server_update_message(
+    GPSDATA_T* pGPSData,
+    char* pMsg,
+    size_t msgSize,
+	bool ignState,
+	unsigned long engineRuntime
+) {
+    bool rStat = true;
+    char* pos = pMsg;
 
-void collect_all_data(int ignitionState) {
-    debug_println(F("collect_all_data() started"));
-    //get current time and add to this data packet
-    gsm_get_time();
-    //attach time to data packet 
-    for (int i = 0; i < strlen(time_char); i++) {
-        data_current[data_index] = time_char[i];
-        data_index++;
+    if (pGPSData->fixAge == TinyGPS::GPS_INVALID_AGE) {
+    	rStat = false;
+    } else {
+        char timeStr[20];
+        gsm_get_time(timeStr, DIM(timeStr));
+		pos = calc_snprintf_return_pointer(
+			pos, msgSize - (pos-pMsg),
+			snprintf(pos, msgSize - (pos-pMsg),
+					 "%s[", timeStr)
+		);
+		if ((config.server_send_flags >> SERVER_SEND_GPSDATE_POS)
+									   & SERVER_SEND_GPSDATE_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%lu", pos == pMsg ? "" : ",", pGPSData->date)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_GPSTIME_POS)
+									   & SERVER_SEND_GPSTIME_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%lu", pos == pMsg ? "" : ",", pGPSData->time)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_LATITUDE_POS)
+									   & SERVER_SEND_LATITUDE_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%1.6f", pos == pMsg ? "" : ",", pGPSData->lat)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_LONGITUDE_POS)
+									   & SERVER_SEND_LONGITUDE_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%1.6f", pos == pMsg ? "" : ",", pGPSData->lon)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_SPEED_POS)
+									   & SERVER_SEND_SPEED_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%1.6f", pos == pMsg ? "" : ",", pGPSData->speed)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_ALTITUDE_POS)
+									   & SERVER_SEND_ALTITUDE_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%1.6f", pos == pMsg ? "" : ",", pGPSData->alt)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_HEADING_POS)
+									   & SERVER_SEND_HEADING_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%1.6f", pos == pMsg ? "" : ",", pGPSData->course)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_HDOP_POS)
+									   & SERVER_SEND_HDOP_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%lu", pos == pMsg ? "" : ",", pGPSData->hdop)
+			);
+		}
+		if ((config.server_send_flags >> SERVER_SEND_NSAT_POS)
+									   & SERVER_SEND_NSAT_MASK) {
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%lu", pos == pMsg ? "" : ",", pGPSData->nsats)
+			);
+		}
+		pos = calc_snprintf_return_pointer(
+			pos, msgSize - (pos-pMsg),
+			snprintf(pos, msgSize - (pos-pMsg), "]")
+		);
+	    if ((config.server_send_flags >> SERVER_SEND_BATT_POS)
+	                                   & SERVER_SEND_BATT_MASK) {
+	        // append battery level to data packet
+	        float sensorValue = analogRead(AIN_S_INLEVEL);
+	        float outputValue = sensorValue
+	            * (242.0f / 22.0f * ANALOG_VREF / 1024.0f);
+			pos = calc_snprintf_return_pointer(
+				pos, msgSize - (pos-pMsg),
+				snprintf(pos, msgSize - (pos-pMsg),
+						 "%s%.2f", pos == pMsg ? "" : ",", outputValue)
+			);
+	    }
+	    if ((config.server_send_flags >> SERVER_SEND_IGN_POS)
+	                                   & SERVER_SEND_IGN_MASK) {
+	        pos = calc_snprintf_return_pointer(
+	            pos, msgSize - (pos-pMsg),
+	            snprintf(pos, msgSize - (pos-pMsg),
+	                     "%%s", pos == pMsg ? "" : ",", ignState ? "ON" : "OFF")
+	        );
+	    }
+	    if ((config.server_send_flags >> SERVER_SEND_RUNTIME_POS)
+	                                   & SERVER_SEND_RUNTIME_MASK) {
+	        pos = calc_snprintf_return_pointer(
+	            pos, msgSize - (pos-pMsg),
+	            snprintf(pos, msgSize - (pos-pMsg),
+	                     "%%ul", pos == pMsg ? "" : ",", engineRuntime)
+	        );
+	    }
     }
-    //collect all data   
-    //indicate start of GPS data packet
-    data_current[data_index] = '[';
-    data_index++;
-    collect_gps_data();
-    //indicate stop of GPS data packet
-    data_current[data_index] = ']';
-    data_index++;
-    if (DATA_INCLUDE_BATTERY_LEVEL) {
-        // append battery level to data packet
-        float sensorValue = analogRead(AIN_S_INLEVEL);
-        float outputValue = sensorValue
-            * (242.0f / 22.0f * ANALOG_VREF / 1024.0f);
-        char batteryLevel[20];
-        snprintf(batteryLevel, 20, "%.2f", outputValue);
-
-        for (int i = 0; i < strlen(batteryLevel); i++) {
-            data_current[data_index++] = batteryLevel[i];
-        }
+    if (rStat && (pos-pMsg < msgSize)) {
+    	// Out of buffer space
+    	rStat = false;
     }
-    // ignition state
-    if (DATA_INCLUDE_IGNITION_STATE) {
-        if (DATA_INCLUDE_BATTERY_LEVEL) {
-            data_current[data_index++] = ',';
-        }
-        if (ignitionState == 0) {
-            data_current[data_index++] = '1';
-        } else {
-            data_current[data_index++] = '0';
-        }
-    }
-    // engine running time
-    if (DATA_INCLUDE_ENGINE_RUNNING_TIME) {
-        unsigned long currentRunningTime = engineRunningTime;
-        char runningTimeString[32];
-        if (engineRunning == 0) {
-            currentRunningTime += (millis() - engine_start);
-        }
-        snprintf(runningTimeString, 32, "%ld",
-            (unsigned long) currentRunningTime / 1000);
-        if (DATA_INCLUDE_IGNITION_STATE || DATA_INCLUDE_BATTERY_LEVEL) {
-            data_current[data_index++] = ',';
-        }
-        for (int i = 0; i < strlen(runningTimeString); i++) {
-            data_current[data_index++] = runningTimeString[i];
-        }
-    }
-    //end of data packet   
-    data_current[data_index] = '\n';
-    data_index++;
-    //terminate data_current 
-    data_current[data_index] = '\0';
-    data_index++;
-    debug_println(F("collect_all_data() completed"));
-}
-
-void collect_all_data_raw(int ignitionState) {
-    debug_println(F("collect_all_data_raw() started"));
-    gsm_get_time();
-    if (SEND_RAW_INCLUDE_KEY) {
-        for (int i = 0; i < strlen(config.key); i++) {
-            data_current[data_index++] = config.key[i];
-        }
-    }
-    if (SEND_RAW_INCLUDE_TIMESTAMP) {
-        if (data_index > 0) {
-            data_current[data_index++] = ',';
-        }
-        for (int i = 0; i < strlen(time_char); i++) {
-            data_current[data_index++] = time_char[i];
-        }
-    }
-    collect_gps_data();
-    if (DATA_INCLUDE_BATTERY_LEVEL) {
-        if (data_index > 0) {
-            data_current[data_index++] = ',';
-        }
-        // append battery level to data packet
-        float sensorValue = analogRead(AIN_S_INLEVEL);
-        float outputValue = sensorValue
-            * (242.0f / 22.0f * ANALOG_VREF / 1024.0f);
-        char batteryLevel[20];
-        snprintf(batteryLevel, 20, "%.2f", outputValue);
-
-        for (int i = 0; i < strlen(batteryLevel); i++) {
-            data_current[data_index++] = batteryLevel[i];
-        }
-    }
-    // ignition state
-    if (DATA_INCLUDE_IGNITION_STATE) {
-        if (data_index > 0) {
-            data_current[data_index++] = ',';
-        }
-        if (ignitionState == 0) {
-            data_current[data_index++] = '1';
-        } else {
-            data_current[data_index++] = '0';
-        }
-    }
-    // engine running time
-    if (DATA_INCLUDE_ENGINE_RUNNING_TIME) {
-        if (data_index > 0) {
-            data_current[data_index++] = ',';
-        }
-        unsigned long currentRunningTime = engineRunningTime;
-        char runningTimeString[32];
-        if (engineRunning == 0) {
-            currentRunningTime += (millis() - engine_start);
-        }
-        snprintf(runningTimeString, 32, "%ld",
-            (unsigned long) currentRunningTime / 1000);
-        for (int i = 0; i < strlen(runningTimeString); i++) {
-            data_current[data_index++] = runningTimeString[i];
-        }
-    }
-    if (!SEND_RAW) {
-        //end of data packet
-        data_current[data_index] = '\n';
-        data_index++;
-    }
-    //terminate data_current
-    data_current[data_index] = '\0';
-    data_index++;
-    debug_println(F("collect_all_data_raw() completed"));
+    return rStat;
 }

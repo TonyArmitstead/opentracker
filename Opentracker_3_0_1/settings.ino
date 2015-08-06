@@ -14,11 +14,9 @@ void storage_config_fill() {
 void settings_load() {
     //load all settings from EEPROM
     int tmp;
-
     debug_println(F("settings_load() started"));
-    config.interval = INTERVAL;
-    config.interval_send = INTERVAL_SEND;
-    config.powersave = POWERSAVE;
+    config.slow_server_interval = SLOW_SERVER_INTERVAL;
+    config.fast_server_interval = FAST_SERVER_INTERVAL;
     strlcpy(config.key, KEY, sizeof(config.key));
     strlcpy(config.sms_key, SMS_KEY, sizeof(config.sms_key));
     strlcpy(config.apn, DEFAULT_APN, sizeof(config.apn));
@@ -27,15 +25,16 @@ void settings_load() {
     config.sms_send_interval = SMS_SEND_INTERVAL;
     strlcpy(config.sms_send_number, SMS_SEND_NUMBER, sizeof(config.sms_send_number));
     config.sms_send_flags = SMS_SEND_DEFAULT;
+    config.server_send_flags = SERVER_SEND_DEFAULT;
     debug_println(F("settings_load() finished"));
 }
 
 void settings_save() {
     debug_println(F("settings_save() started"));
     //save all settings to flash
-    byte b2[sizeof(settings)]; // create byte array to store the struct
-    memcpy(b2, &config, sizeof(settings)); // copy the struct to the byte array
-    dueFlashStorage.write(STORAGE_CONFIG_PAGE, b2, sizeof(settings)); // write byte array to flash
+    byte b2[sizeof(SETTINGS_T)]; // create byte array to store the struct
+    memcpy(b2, &config, sizeof(SETTINGS_T)); // copy the struct to the byte array
+    dueFlashStorage.write(STORAGE_CONFIG_PAGE, b2, sizeof(SETTINGS_T)); // write byte array to flash
     debug_println(F("settings_save() finished"));
 }
 
