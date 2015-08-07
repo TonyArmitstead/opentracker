@@ -28,58 +28,66 @@ SMS_CMD_HANDLER_T smsCommands[] = {
  */
 const size_t SMS_MAX_CMD_LEN = 40;
 /**
+ * The value strings for ON/OFF configuration fields
+ */
+const char* ON_OFF_VALUES[] = {"off", "on"};
+/**
  * Declare a structure for defining a bit field within an integer value
  */
 typedef struct SMS_FIELD_SPEC_S {
-    const char* pFieldName;		// The name of the field
-    unsigned int fieldStartPos;	// The position of the field LSB
-    unsigned int fieldMask;		// A mask for the field assuming it has
-    							    // been right justified (starts at bit 0)
-    const char* fieldValues[4]; // 4 sufficient for 2 bit field, increase if req
-                                // The matching index value is taken to tbe the
-                                // binary field value. Unused index values
-                                // should be filled with an empty string or
-                                // NULL(0)
+    const char* pFieldName;	 // The name of the field
+    unsigned int fieldStartPos; // The position of the field LSB
+    unsigned int fieldMask;	 // A mask for the field assuming it has
+    							 // been right justified (starts at bit 0)
+    const char** fieldValues;   // points to an array of string values, one
+                                 // for each allowed binary value.
+                                 // The matching index value is taken to be the
+                                 // binary field value. Unused index values
+                                 // should be filled with an empty string or
+                                 // NULL(0)
 } SMS_FIELD_SPEC_T;
+/**
+ * Helper macros for defining generic fields and OFF/ON fields
+ */
+#define SMS_FIELD(field, class, name, values) \
+    {field, class##_SEND_##name##_POS, class##_SEND_##name##_MASK, \
+    values}
+#define SMS_ONOFF_FIELD(field, class, name) \
+    SMS_FIELD(field, class, name, ON_OFF_VALUES)
+/**
+ * The value strings for the location format field
+ */
+const char* LOCFMT_VALUES[] = {"web", "map", "val", NULL};
 /**
  * Declare the known SMS configuration field names and bit positions, along
  * with the set of allowed values (mapped to strings)
  */
 SMS_FIELD_SPEC_T sms_msg_config_fields[] = {
-    {"loc",    SMS_SEND_LOCATION_POS, SMS_SEND_LOCATION_MASK,
-               {"off","on"}},
-    {"locfmt", SMS_SEND_LOCATION_FORMAT_POS, SMS_SEND_LOCATION_FORMAT_MASK,
-               {"web","map","val",""}},
-    {"nsat",   SMS_SEND_NSAT_POS, SMS_SEND_NSAT_MASK,
-               {"off","on"}},
-    {"alt",    SMS_SEND_ALT_POS, SMS_SEND_ALT_MASK,
-               {"off","on"}},
-    {"speed",  SMS_SEND_SPEED_POS, SMS_SEND_SPEED_MASK,
-               {"off","on"}},
-    {"ign",    SMS_SEND_IGN_POS, SMS_SEND_IGN_MASK,
-               {"off","on"}}
+    SMS_ONOFF_FIELD("loc", SMS, LOCATION),
+    SMS_FIELD("locfmt", SMS, LOCATION_FORMAT, LOCFMT_VALUES),
+    SMS_ONOFF_FIELD("nsat", SMS, NSAT),
+    SMS_ONOFF_FIELD("alt", SMS, ALT),
+    SMS_ONOFF_FIELD("speed", SMS, SPEED),
+    SMS_ONOFF_FIELD("ign", SMS, IGN)
 };
 
 /**
  * Declare the known Server configuration field names and bit positions, along
  * with the set of allowed values (mapped to strings)
  */
-#define SMS_SERVER_SEND(field, name) \
-    {field, SERVER_SEND_##name##_POS, SERVER_SEND_##name##_MASK, {"off", "on"}}
-    
 SMS_FIELD_SPEC_T sms_server_config_fields[] = {
-	SMS_SERVER_SEND("date", GPSDATE),
-	SMS_SERVER_SEND("time", GPSTIME),
-	SMS_SERVER_SEND("lat", LATITUDE),
-	SMS_SERVER_SEND("lon", LONGITUDE),
-	SMS_SERVER_SEND("speed", SPEED),
-	SMS_SERVER_SEND("alt", ALTITUDE),
-	SMS_SERVER_SEND("head", HEADING),
-	SMS_SERVER_SEND("hdop", HDOP),
-	SMS_SERVER_SEND("nsat", NSAT),
-	SMS_SERVER_SEND("bat", BATT),
-	SMS_SERVER_SEND("ign", IGN),
-	SMS_SERVER_SEND("run", RUNTIME)
+	SMS_ONOFF_FIELD("date", SERVER, GPSDATE),
+	SMS_ONOFF_FIELD("time", SERVER, GPSTIME),
+	SMS_ONOFF_FIELD("lat", SERVER, LATITUDE),
+	SMS_ONOFF_FIELD("lon", SERVER, LONGITUDE),
+	SMS_ONOFF_FIELD("speed", SERVER, SPEED),
+	SMS_ONOFF_FIELD("alt", SERVER, ALTITUDE),
+	SMS_ONOFF_FIELD("head", SERVER, HEADING),
+	SMS_ONOFF_FIELD("hdop", SERVER, HDOP),
+	SMS_ONOFF_FIELD("nsat", SERVER, NSAT),
+	SMS_ONOFF_FIELD("bat", SERVER, BATT),
+	SMS_ONOFF_FIELD("ign", SERVER, IGN),
+	SMS_ONOFF_FIELD("run", SERVER, RUNTIME)
 };
 
 /**
@@ -419,6 +427,28 @@ void sms_form_field_config_message(
 }
 
 /**
+ * Calculates the number of bits set in a bit mask value
+ * @param fieldMask a value (often = 1!) with a set of 1s in the LS bits
+ *        and 0s in the MS bits
+ * @return the number of 1s in the LS bits
+ *         e.g. 0x00000001 -> 1
+ *              0x00000003 -> 2
+ *              0x00000007 -> 3
+ *              ....
+ *              0xFFFFFFFF -> 32
+ */
+size_t calcMaskBitCount(
+    unsigned long fieldMask
+) {
+    size_t count = 0;
+    while (fieldMask != 0) {
+        ++count;
+        fieldMask >>= 1;
+    }
+    return count;
+}
+
+/**
  * Sets a configuration field value
  * @param pFieldName points to the field name
  * @param pFieldValue points to the field value
@@ -451,21 +481,19 @@ bool sms_process_config_field(
              (idx < fieldCount) && !fieldProcessedStat;
              ++idx) {
             if (stricmp(pFieldSpecs[idx].pFieldName, pFieldName) == 0) {
+                unsigned int fieldMask = pFieldSpecs[idx].fieldMask;
+                unsigned int fieldStartPos = pFieldSpecs[idx].fieldStartPos;
+                const char** pValueStrings = pFieldSpecs[idx].fieldValues;
+                size_t maskBitCount = calcMaskBitCount(fieldMask);
                 // Known field name :-), so convert field value string to
                 // its binary value (which is the index into the matching
                 // field values array).
                 for (size_t value=0;
-                     value < DIM(pFieldSpecs[idx].fieldValues);
-                     ++value) {
-                    const char* pTestValue =
-                    		pFieldSpecs[idx].fieldValues[value];
-                    if ((pTestValue != NULL) &&
-                        (stricmp(pTestValue, pFieldValue) == 0)) {
+                     value < maskBitCount;
+                     ++value, ++pValueStrings) {
+                    if ((*pValueStrings != NULL) &&
+                        (stricmp(*pValueStrings, pFieldValue) == 0)) {
                         // Field value string located
-                        unsigned int fieldMask =
-                        		pFieldSpecs[idx].fieldMask;
-                        unsigned int fieldStartPos =
-                        		pFieldSpecs[idx].fieldStartPos;
                         // Clear the bit(s) in the flag value
                         *pCurValues &= !(fieldMask << fieldStartPos);
                         value &= fieldMask;
