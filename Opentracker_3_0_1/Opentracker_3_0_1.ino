@@ -23,29 +23,19 @@
 // Variables will change:
 int ledState = LOW;             // ledState used to set the LED
 unsigned long previousMillis = 0;        // will store last time LED was updated
-unsigned long watchdogMillis = 0;        // will store last time modem watchdog was reset
-
-int interval_count = 0; //current interval count (increased on each data collection and reset after sending)
 unsigned long lastSMSSendTime = 0;
-char modem_command[256];  // Modem AT command buffer
-char modem_data[PACKET_SIZE]; // Modem TCP data buffer
-char modem_reply[200];    //data received from modem, max 200 chars   
 #if STORAGE
 long logindex = STORAGE_DATA_START;
 #endif
-byte save_config = 0;      //flag to save config to flash
-byte power_reboot = 0; //flag to reboot everything (used after new settings have been saved)
-
+byte saveConfig = 0;      //flag to save config to flash
+byte powerReboot = 0; //flag to reboot everything (used after new settings have been saved)
 bool ignState = false;
-int engineRunning = -1;
+bool engineRunning = false;
 unsigned long engineRunningTime = 0;
-unsigned long engine_start;
-
+unsigned long engineStartTime;
 TinyGPS gps;
 DueFlashStorage dueFlashStorage;
 int gsm_send_failures = 0;
-
-
 SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
 GPSDATA_T lastReportedGPSData;
@@ -121,7 +111,7 @@ void setup() {
  *        start_time-+***********************+-end_time
  */
 
-unsigned long time_diff(unsigned long end_time, unsigned long start_time) {
+unsigned long timeDiff(unsigned long end_time, unsigned long start_time) {
     if (end_time >= start_time) {
         return end_time - start_time;
     }
@@ -129,38 +119,31 @@ unsigned long time_diff(unsigned long end_time, unsigned long start_time) {
 }
 
 void loop() {
-    int IGNT_STAT;
     //start counting time
     unsigned long time_start = millis();
     status_led();
     // Check if ignition is turned on
-    IGNT_STAT = digitalRead(PIN_S_DETECT);
-    if (IGNT_STAT == 0) {
-        ignState = true;
-        if (engineRunning != 0) {
-            // engine started
-            engine_start = millis();
-            engineRunning = 0;
+    ignState = (digitalRead(PIN_S_DETECT) == 0);
+    if (ignState) {
+        // Insert here only code that should be processed when Ignition is ON
+        debug_println(F("Ignition is ON!"));
+        if (!engineRunning) {
+            // engine started, so record time started
+            engineStartTime = millis();
+            engineRunning = true;
+        } else {
+            // Update engine running time
+            engineRunningTime = millis() - engineStartTime;
         }
     } else {
-        ignState = false;
-        if (engineRunning != 1) {
-            // engine stopped
-            if (engineRunning == 0) {
-                engineRunningTime += (millis() - engine_start);
-            }
-            engineRunning = 1;
+        debug_println(F("Ignition is OFF!"));
+        // Insert here only code that should be processed when Ignition is OFF 
+        if (engineRunning) {
+            engineRunning = false;
         }
     }
     // Process any SMS configuration requests
     sms_check();
-    if (IGNT_STAT == 0) {
-        debug_println(F("Ignition is ON!"));
-        // Insert here only code that should be processed when Ignition is ON
-    } else {
-        debug_println(F("Ignition is OFF!"));
-        // Insert here only code that should be processed when Ignition is OFF 
-    }
     // Collect GPS data
     if (read_gps_data(&gpsData, 2000)) {
     	lastGoodGPSData = gpsData;
@@ -177,7 +160,7 @@ void loop() {
     		}
     	}
     	// Is it time to update the server?
-    	if (time_diff(time_start, lastServerUpdateTime) > 1000*serverUpdatePeriod) {
+    	if (timeDiff(time_start, lastServerUpdateTime) > 1000*serverUpdatePeriod) {
 			if (form_server_update_message(
 				&gpsData, serverData, sizeof(serverData),
                 ignState, engineRunningTime)) {
@@ -191,7 +174,7 @@ void loop() {
     // Check if sending SMS location updates
     if ((strlen(config.sms_send_number) != 0) &&
         (config.sms_send_interval != 0)) {
-        if (time_diff(time_start, lastSMSSendTime) > 1000*config.sms_send_interval) {
+        if (timeDiff(time_start, lastSMSSendTime) > 1000*config.sms_send_interval) {
         	if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
                 debug_println(F("Was time to send SMS location but no location data available"));
             } else {
@@ -203,14 +186,14 @@ void loop() {
             }
         }
     }
-    if (save_config == 1) {
+    if (saveConfig == 1) {
         //config should be saved
         settings_save();
-        save_config = 0;
+        saveConfig = 0;
     }
-    if (power_reboot == 1) {
+    if (powerReboot == 1) {
         //reboot unit
         reboot();
-        power_reboot = 0;
+        powerReboot = 0;
     }
 }

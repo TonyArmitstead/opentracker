@@ -3,7 +3,7 @@
 void status_led() {
     //blink led    
     unsigned long currentMillis = millis();
-    if (currentMillis - previousMillis > led_interval) {
+    if (currentMillis - previousMillis > LED_INTERVAL) {
         // save the last time you blinked the LED 
         previousMillis = currentMillis;
         // if the LED is off turn it on and vice-versa:

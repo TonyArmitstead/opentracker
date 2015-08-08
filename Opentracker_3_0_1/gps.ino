@@ -26,10 +26,10 @@ bool read_gps_data(
     bool rStat = false;
     unsigned long tStart = millis();
     // Clear out any buffered received GPS data
-    while (gps_port.available() && time_diff(millis(), tStart) < timeout) {
+    while (gps_port.available() && timeDiff(millis(), tStart) < timeout) {
         (void)gps_port.read();
     }
-    while ((rStat == false) && time_diff(millis(), tStart) < timeout) {
+    while ((rStat == false) && timeDiff(millis(), tStart) < timeout) {
         if (gps_port.available()) {
             // As new GPS data arrives, feed it to the gps object until it tells
             // us it has received a new gps data sentence

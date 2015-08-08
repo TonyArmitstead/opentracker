@@ -13,14 +13,13 @@ unsigned long led_interval = 1000; // interval at which to blink status led (mil
                                      // data when we are stopped
 #define SMS_SEND_INTERVAL (24*60*60) // how often, in s, to send a location
                                      // SMS message
-#define SMS_SEND_NUMBER ""           // The phone number to send the location
-                                     // SMS message
+#define SMS_SEND_NUMBER ""
 #define KEY ""   //key for connection, will be sent with every data transmission
 #define DATA_LIMIT 2500     //current data limit, data collected before sending to remote server can not exceed this
 // SMS related definitions
 #define MAX_SMS_MSG_LEN 144
 #define MAX_SMS_KEY_LEN 12  // SMS key cant be longer than this
-#define SMS_KEY "pass"      // default key for SMS command auth
+#define SMS_KEY ""      // default key for SMS command auth
 // Macro to help with forming SMS_SEND bit data values
 #define SMS_SEND(name, val) \
     ((SMS_SEND_##name##_##val & SMS_SEND_##name##_MASK) << SMS_SEND_##name##_POS)
@@ -170,11 +169,11 @@ const char HTTP_HEADER2[] =
  */
 typedef struct GPSDATA_S {
     unsigned long fixAge;  // age of this fix in ms or TinyGPS::GPS_INVALID_AGE
-    float lat;              // latitude
-    float lon;              // longitude
-    float alt;              // altitude in meters (+/-)
-    float course;           // course/direction in degrees
-    float speed;            // speed in km/h
+    float lat;             // latitude
+    float lon;             // longitude
+    float alt;             // altitude in meters (+/-)
+    float course;          // course/direction in degrees
+    float speed;           // speed in km/h
     unsigned long hdop;    // horizontal dilution of precision in 100ths
     unsigned long time;    // GPS time
     unsigned long date;    // GPS date

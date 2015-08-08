@@ -35,16 +35,16 @@ const char* ON_OFF_VALUES[] = {"off", "on"};
  * Declare a structure for defining a bit field within an integer value
  */
 typedef struct SMS_FIELD_SPEC_S {
-    const char* pFieldName;	 // The name of the field
+    const char* pFieldName;     // The name of the field
     unsigned int fieldStartPos; // The position of the field LSB
-    unsigned int fieldMask;	 // A mask for the field assuming it has
-    							 // been right justified (starts at bit 0)
+    unsigned int fieldMask;     // A mask for the field assuming it has
+                                // been right justified (starts at bit 0)
     const char** fieldValues;   // points to an array of string values, one
-                                 // for each allowed binary value.
-                                 // The matching index value is taken to be the
-                                 // binary field value. Unused index values
-                                 // should be filled with an empty string or
-                                 // NULL(0)
+                                // for each allowed binary value.
+                                // The matching index value is taken to be the
+                                // binary field value. Unused index values
+                                // should be filled with an empty string or
+                                // NULL(0)
 } SMS_FIELD_SPEC_T;
 /**
  * Helper macros for defining generic fields and OFF/ON fields
@@ -76,18 +76,18 @@ SMS_FIELD_SPEC_T sms_msg_config_fields[] = {
  * with the set of allowed values (mapped to strings)
  */
 SMS_FIELD_SPEC_T sms_server_config_fields[] = {
-	SMS_ONOFF_FIELD("date", SERVER, GPSDATE),
-	SMS_ONOFF_FIELD("time", SERVER, GPSTIME),
-	SMS_ONOFF_FIELD("lat", SERVER, LATITUDE),
-	SMS_ONOFF_FIELD("lon", SERVER, LONGITUDE),
-	SMS_ONOFF_FIELD("speed", SERVER, SPEED),
-	SMS_ONOFF_FIELD("alt", SERVER, ALTITUDE),
-	SMS_ONOFF_FIELD("head", SERVER, HEADING),
-	SMS_ONOFF_FIELD("hdop", SERVER, HDOP),
-	SMS_ONOFF_FIELD("nsat", SERVER, NSAT),
-	SMS_ONOFF_FIELD("bat", SERVER, BATT),
-	SMS_ONOFF_FIELD("ign", SERVER, IGN),
-	SMS_ONOFF_FIELD("run", SERVER, RUNTIME)
+    SMS_ONOFF_FIELD("date", SERVER, GPSDATE),
+    SMS_ONOFF_FIELD("time", SERVER, GPSTIME),
+    SMS_ONOFF_FIELD("lat", SERVER, LATITUDE),
+    SMS_ONOFF_FIELD("lon", SERVER, LONGITUDE),
+    SMS_ONOFF_FIELD("speed", SERVER, SPEED),
+    SMS_ONOFF_FIELD("alt", SERVER, ALTITUDE),
+    SMS_ONOFF_FIELD("head", SERVER, HEADING),
+    SMS_ONOFF_FIELD("hdop", SERVER, HDOP),
+    SMS_ONOFF_FIELD("nsat", SERVER, NSAT),
+    SMS_ONOFF_FIELD("bat", SERVER, BATT),
+    SMS_ONOFF_FIELD("ign", SERVER, IGN),
+    SMS_ONOFF_FIELD("run", SERVER, RUNTIME)
 };
 
 /**
@@ -101,7 +101,7 @@ void sms_form_sms_update_str(
     char* pStr,
     size_t strSize,
     GPSDATA_T* pGPSData,
-	bool ignState
+    bool ignState
 ) {
     char* pos = pStr;
     if (((config.sms_send_flags >> SMS_SEND_LOCATION_POS)
@@ -179,8 +179,8 @@ void sms_apn_handler(
         sms_send_msg("Error: APN is too long", pPhoneNumber);
     } else {
         strcpy(config.apn, pValue);
-        save_config = 1;
-        power_reboot = 1;
+        saveConfig = 1;
+        powerReboot = 1;
         sms_send_msg("APN saved", pPhoneNumber);
     }
 }
@@ -198,8 +198,8 @@ void sms_gprspass_handler(
         sms_send_msg("Error: gprs password is too long", pPhoneNumber);
     } else {
         strcpy(config.pwd, pValue);
-        save_config = 1;
-        power_reboot = 1;
+        saveConfig = 1;
+        powerReboot = 1;
         sms_send_msg("gprs password saved", pPhoneNumber);
     }
 }
@@ -217,8 +217,8 @@ void sms_gprsuser_handler(
         sms_send_msg("Error: gprs username is too long", pPhoneNumber);
     } else {
         strcpy(config.user, pValue);
-        save_config = 1;
-        power_reboot = 1;
+        saveConfig = 1;
+        powerReboot = 1;
         sms_send_msg("gprs username saved", pPhoneNumber);
     }
 }
@@ -236,7 +236,7 @@ void sms_smskey_handler(
         sms_send_msg("Error: sms password is too long", pPhoneNumber);
     } else {
         strcpy(config.sms_key, pValue);
-        save_config = 1;
+        saveConfig = 1;
         sms_send_msg("sms password saved", pPhoneNumber);
     }
 }
@@ -254,8 +254,8 @@ void sms_pin_handler(
         sms_send_msg("Error: sim pin is too long", pPhoneNumber);
     } else {
         strcpy(config.sim_pin, pValue);
-        save_config = 1;
-        power_reboot = 1;
+        saveConfig = 1;
+        powerReboot = 1;
         sms_send_msg("sim pin saved", pPhoneNumber);
     }
 }
@@ -275,7 +275,7 @@ void sms_sint_handler(
         sms_send_msg("Error: bad slow update interval", pPhoneNumber);
     } else {
         config.slow_server_interval = updateSecs;
-        save_config = 1;
+        saveConfig = 1;
         sms_send_msg("Slow update interval saved", pPhoneNumber);
     }
 }
@@ -295,7 +295,7 @@ void sms_fint_handler(
         sms_send_msg("Error: bad fast update interval", pPhoneNumber);
     } else {
         config.fast_server_interval = updateSecs;
-        save_config = 1;
+        saveConfig = 1;
         sms_send_msg("Fast update interval saved", pPhoneNumber);
     }
 }
@@ -332,7 +332,7 @@ void sms_smsnumber_handler(
         sms_send_msg("Error: sms number is too long", pPhoneNumber);
     } else {
         strcpy(config.sms_send_number, pValue);
-        save_config = 1;
+        saveConfig = 1;
         sms_send_msg("sms number saved", pPhoneNumber);
     }
 }
@@ -352,7 +352,7 @@ void sms_smsfreq_handler(
         sms_send_msg("Error: bad frequency", pPhoneNumber);
     } else {
         config.sms_send_interval = updateSecs * 1000;
-        save_config = 1;
+        saveConfig = 1;
         sms_send_msg("sms freq saved", pPhoneNumber);
     }
 }
@@ -396,9 +396,9 @@ const char* sms_extract_field(
 void sms_form_field_config_message(
     char* pMsg,
     size_t msgSize,
-	unsigned long fieldValues,
-	const struct SMS_FIELD_SPEC_S* pFieldSpecs,
-	size_t fieldCount
+    unsigned long fieldValues,
+    const struct SMS_FIELD_SPEC_S* pFieldSpecs,
+    size_t fieldCount
 ) {
     char* pos = pMsg;
     size_t msgLeft = msgSize;
@@ -464,10 +464,10 @@ size_t calcMaskBitCount(
 bool sms_process_config_field(
     const char* pFieldName,
     const char* pFieldValue,
-	const struct SMS_FIELD_SPEC_S* pFieldSpecs,
-	size_t fieldCount,
-	unsigned long defaultValues,
-	unsigned long* pCurValues
+    const struct SMS_FIELD_SPEC_S* pFieldSpecs,
+    size_t fieldCount,
+    unsigned long defaultValues,
+    unsigned long* pCurValues
 ) {
     bool fieldProcessedStat = false;
     if (stricmp(pFieldName, "default") == 0) {
@@ -549,10 +549,10 @@ void sms_smssend_handler(
             if (*pos == ',') {
                 pos += 1;
                 if (!sms_process_config_field(
-                		fieldName, fieldValue,
-						sms_msg_config_fields, DIM(sms_msg_config_fields),
-						SMS_SEND_DEFAULT, &config.sms_send_flags
-                		)) {
+                        fieldName, fieldValue,
+                        sms_msg_config_fields, DIM(sms_msg_config_fields),
+                        SMS_SEND_DEFAULT, &config.sms_send_flags
+                        )) {
                     sms_send_msg("Bad SMS field name or field value", pPhoneNumber);
                     pos = NULL; // Abandon processing the message
                 }
@@ -564,8 +564,8 @@ void sms_smssend_handler(
     }
     char msg[MAX_SMS_MSG_LEN+1];
     sms_form_field_config_message(
-    	msg, DIM(msg), config.sms_send_flags,
-		sms_msg_config_fields, DIM(sms_msg_config_fields));
+        msg, DIM(msg), config.sms_send_flags,
+        sms_msg_config_fields, DIM(sms_msg_config_fields));
     sms_send_msg(msg, pPhoneNumber);
 }
 
@@ -618,10 +618,10 @@ void sms_srvsend_handler(
             if (*pos == ',') {
                 pos += 1;
                 if (!sms_process_config_field(
-                		fieldName, fieldValue,
-						sms_server_config_fields, DIM(sms_server_config_fields),
-						SERVER_SEND_DEFAULT, &config.server_send_flags
-                		)) {
+                        fieldName, fieldValue,
+                        sms_server_config_fields, DIM(sms_server_config_fields),
+                        SERVER_SEND_DEFAULT, &config.server_send_flags
+                        )) {
                     sms_send_msg("Bad server field name or field value", pPhoneNumber);
                     pos = NULL; // Abandon processing the message
                 }
@@ -633,8 +633,8 @@ void sms_srvsend_handler(
     }
     char msg[MAX_SMS_MSG_LEN+1];
     sms_form_field_config_message(
-    	msg, DIM(msg), config.server_send_flags,
-		sms_server_config_fields, DIM(sms_server_config_fields));
+        msg, DIM(msg), config.server_send_flags,
+        sms_server_config_fields, DIM(sms_server_config_fields));
     sms_send_msg(msg, pPhoneNumber);
 }
 

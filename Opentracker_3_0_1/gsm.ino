@@ -1,4 +1,7 @@
 //gsm functions
+char modem_command[256];  // Modem AT command buffer
+char modem_data[PACKET_SIZE]; // Modem TCP data buffer
+char modem_reply[200];    //data received from modem, max 200 chars
 
 void gsm_setup() {
     //setup modem pins
@@ -63,8 +66,7 @@ void gsm_send_tcp_data() {
 void gsm_set_pin() {
     debug_println(F("gsm_set_pin() started"));
     //checking if PIN is set 
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+CPIN?");
+    snprintf(modem_command, sizeof(modem_command), "AT+CPIN?");
     gsm_send_command();
     gsm_wait_for_reply(1);
     char *tmp = strstr(modem_reply, "SIM PIN");
@@ -89,8 +91,8 @@ void gsm_set_pin() {
                 }
             } else {
                 debug_println(
-                    F(
-                        "gsm_set_pin(): PIN supplied, but has invalid length. Not sending to modem."));
+                    F("gsm_set_pin(): PIN supplied, but has invalid length."
+                      " Not sending to modem."));
             }
         }
     } else {
@@ -104,16 +106,12 @@ void gsm_set_pin() {
  * @param pStr points to where to write the string
  * @param strSize the storage size for pStr
  */
-void gsm_get_time(
-    char* pStr,
-    size_t strSize
-) {
+void gsm_get_time(char* pStr, size_t strSize) {
     int i;
     //clean any serial data       
     gsm_get_reply();
     //get time from modem
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+CCLK?");
+    snprintf(modem_command, sizeof(modem_command), "AT+CCLK?");
     gsm_send_command();
     gsm_wait_for_reply(1);
     char *tmp = strstr(modem_reply, "+CCLK: \"");
@@ -133,18 +131,15 @@ void gsm_get_time(
 void gsm_startup_cmd() {
     debug_println(F("gsm_startup_cmd() started"));
     //disable echo for TCP data
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QISDE=0");
+    snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
     gsm_send_command();
     gsm_wait_for_reply(1);
     //set receiving TCP data by command
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QINDI=1");
+    snprintf(modem_command, sizeof(modem_command), "AT+QINDI=1");
     gsm_send_command();
     gsm_wait_for_reply(1);
     //set SMS as text format
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+CMGF=1");
+    snprintf(modem_command, sizeof(modem_command), "AT+CMGF=1");
     gsm_send_command();
     gsm_wait_for_reply(1);
     debug_println(F("gsm_startup_cmd() completed"));
@@ -155,8 +150,7 @@ void gsm_get_imei() {
     char preimei[20];             //IMEI number
     debug_println(F("gsm_get_imei() started"));
     //get modem's imei 
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+GSN");
+    snprintf(modem_command, sizeof(modem_command), "AT+GSN");
     gsm_send_command();
     gsm_wait_for_reply(1);
     //reply data stored to modem_reply[200]
@@ -191,8 +185,7 @@ int gsm_disconnect(int waitForReply) {
     int ret = 0;
     debug_println(F("gsm_disconnect() started"));
     //disconnect GSM 
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QIDEACT");
+    snprintf(modem_command, sizeof(modem_command), "AT+QIDEACT");
     gsm_send_command();
     if (waitForReply) {
         gsm_wait_for_reply(0);
@@ -213,16 +206,14 @@ int gsm_set_apn() {
     debug_println(F("gsm_set_apn() started"));
     //set all APN data, dns, etc
     snprintf(modem_command, sizeof(modem_command),
-        "AT+QIREGAPP=\"%s\",\"%s\",\"%s\"",
-        config.apn, config.user, config.pwd);
+        "AT+QIREGAPP=\"%s\",\"%s\",\"%s\"", config.apn, config.user,
+        config.pwd);
     gsm_send_command();
     gsm_wait_for_reply(1);
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QIDNSCFG=\"8.8.8.8\"");
+    snprintf(modem_command, sizeof(modem_command), "AT+QIDNSCFG=\"8.8.8.8\"");
     gsm_send_command();
     gsm_wait_for_reply(1);
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QIDNSIP=1");
+    snprintf(modem_command, sizeof(modem_command), "AT+QIDNSIP=1");
     gsm_send_command();
     gsm_wait_for_reply(1);
     debug_println(F("gsm_set_apn() completed"));
@@ -239,8 +230,7 @@ int gsm_connect() {
         //open socket connection to remote host
         //opening connection
         snprintf(modem_command, sizeof(modem_command),
-            "AT+QIOPEN=\"%s\",\"%s\",\"%s\"",
-            PROTO, HOSTNAME, HTTP_PORT);
+            "AT+QIOPEN=\"%s\",\"%s\",\"%s\"", PROTO, HOSTNAME, HTTP_PORT);
         gsm_send_command();
         gsm_wait_for_reply(0);
         char *tmp = strstr(modem_reply, "CONNECT OK");
@@ -268,8 +258,7 @@ int gsm_validate_tcp() {
     debug_println(F("gsm_validate_tcp() started."));
     //todo check in the loop if everything delivered
     for (int k = 0; k < 10; k++) {
-        snprintf(modem_command, sizeof(modem_command),
-            "AT+QISACK");
+        snprintf(modem_command, sizeof(modem_command), "AT+QISACK");
         gsm_send_command();
         gsm_wait_for_reply(1);
         //todo check if everything is delivered
@@ -295,31 +284,26 @@ int gsm_validate_tcp() {
     return ret;
 }
 
-void gsm_send_http_current(
-    const char* pServerMsg
-) {
+void gsm_send_http_current(const char* pServerMsg) {
     //send HTTP request, after connection if fully opened
     //this will send Current data
     debug_print(F("gsm_send_http(): sending data: "));
     debug_println(pServerMsg);
     //sending header                     
-    snprintf(modem_data, sizeof(modem_data),
-        "%s%d%s",
-        HTTP_HEADER1, 13 + strlen(config.imei) + strlen(config.key) + strlen(pServerMsg), HTTP_HEADER2);
+    snprintf(modem_data, sizeof(modem_data), "%s%d%s", HTTP_HEADER1,
+        13 + strlen(config.imei) + strlen(config.key) + strlen(pServerMsg),
+        HTTP_HEADER2);
     //sending header packet to remote host
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QISEND=%d",
+    snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
     gsm_send_command();
     gsm_wait_for_reply(1);
     gsm_send_tcp_data();
     gsm_validate_tcp();
     //sending imei and key first
-    snprintf(modem_data, sizeof(modem_data),
-        "imei=%s&key=%s&d=%s",
-        config.imei, config.key, pServerMsg);
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QISEND=%d",
+    snprintf(modem_data, sizeof(modem_data), "imei=%s&key=%s&d=%s", config.imei,
+        config.key, pServerMsg);
+    snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
     gsm_send_command();
     gsm_wait_for_reply(1);
@@ -368,9 +352,7 @@ void gsm_send_http_current(
     debug_println(F("gsm_send_http(): data sent."));
 }
 
-void gsm_send_raw_current(
-    const char* pServerMsg
-) {
+void gsm_send_raw_current(const char* pServerMsg) {
     //send raw TCP request, after connection if fully opened
     //this will send Current data
     debug_print(F("gsm_send_raw(): sending data: "));
@@ -404,8 +386,7 @@ void gsm_send_raw_current(
                 chunk_pos = 0;
             }
             //sending chunk
-            snprintf(modem_command, sizeof(modem_command),
-                "AT+QISEND=%d",
+            snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
                 chunk_len);
             gsm_send_command();
             gsm_wait_for_reply(1);
@@ -418,9 +399,7 @@ void gsm_send_raw_current(
     debug_println(F("gsm_send_raw(): data sent."));
 }
 
-int gsm_send_data(
-    const char* pServerMsg
-) {
+int gsm_send_data(const char* pServerMsg) {
     int ret_tmp = 0;
 
     //send 2 ATs
@@ -434,13 +413,11 @@ int gsm_send_data(
         debug_println(F("Error deactivating GPRS."));
     }
     // Disable TCP data echo
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QISDE=0");
+    snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
     gsm_send_command();
     gsm_wait_for_reply(1);
     // Only allow a single TCP session
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QIMUX=0");
+    snprintf(modem_command, sizeof(modem_command), "AT+QIMUX=0");
     gsm_send_command();
     gsm_wait_for_reply(1);
     //opening connection
@@ -465,7 +442,7 @@ int gsm_send_data(
         gsm_send_failures++;
         if (GSM_SEND_FAILURES_REBOOT > 0
             && gsm_send_failures >= GSM_SEND_FAILURES_REBOOT) {
-            power_reboot = 1;
+            powerReboot = 1;
         }
     }
     return ret_tmp;
@@ -476,7 +453,7 @@ void gsm_get_reply() {
     size_t index = strlen(modem_reply);
     while (gsm_port.available()) {
         char inChar = gsm_port.read(); // Read a character
-        if (index == sizeof(modem_reply)-1) {
+        if (index == sizeof(modem_reply) - 1) {
             break;
         }
         modem_reply[index++] = inChar; // Store it
@@ -521,7 +498,7 @@ bool gsm_modem_reply_ends_with(const char* pText) {
     bool rCode = false;
     size_t reply_len = strlen(modem_reply);
     if (reply_len >= strlen(pText)) {
-        if (strcmp(modem_reply+reply_len-6, pText) == 0) {
+        if (strcmp(modem_reply + reply_len - 6, pText) == 0) {
             rCode = true;
         }
     }
@@ -533,7 +510,7 @@ bool gsm_modem_reply_matches(size_t offset, const char* pMatch) {
     size_t reply_len = strlen(modem_reply);
     size_t match_len = strlen(pMatch);
     if (reply_len >= offset + match_len) {
-        if (strncmp(modem_reply+offset, pMatch, match_len) == 0) {
+        if (strncmp(modem_reply + offset, pMatch, match_len) == 0) {
             rCode = true;
         }
     }
@@ -543,19 +520,21 @@ bool gsm_modem_reply_matches(size_t offset, const char* pMatch) {
 void show_modem_reply() {
     debug_print(F("Modem Reply: '"));
     size_t reply_len = strlen(modem_reply);
-    for (size_t idx=0; idx < reply_len; ++idx) {
+    for (size_t idx = 0; idx < reply_len; ++idx) {
         switch (modem_reply[idx]) {
         case '\r':
-            debug_print("\\r"); break;
+            debug_print("\\r");
+            break;
         case '\n':
-            debug_print("\\n"); break;
+            debug_print("\\n");
+            break;
         default:
             if (isprint(modem_reply[idx])) {
                 debug_print(modem_reply[idx]);
             } else {
                 debug_print("\\?");
             }
-            break;        
+            break;
         }
     }
     debug_println("'");
@@ -600,53 +579,53 @@ bool gsm_is_final_result(bool allowOK) {
     size_t last_line_index = locate_last_line();
     switch (modem_reply[last_line_index]) {
     case '+':
-        if (gsm_modem_reply_matches(last_line_index+1, "CME ERROR:")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "CME ERROR:")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "CMS ERROR:")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "CMS ERROR:")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "CPIN:")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "CPIN:")) {
             return true;
         }
         return false;
     case '>':
-        return gsm_modem_reply_matches(last_line_index+1, " ");
+        return gsm_modem_reply_matches(last_line_index + 1, " ");
     case 'B':
-        return gsm_modem_reply_matches(last_line_index+1, "USY\r\n");
+        return gsm_modem_reply_matches(last_line_index + 1, "USY\r\n");
     case 'C':
-        if (gsm_modem_reply_matches(last_line_index+1, "ONNECT OK\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "ONNECT OK\r\n")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "ONNECT FAIL\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "ONNECT FAIL\r\n")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "all Ready\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "all Ready\r\n")) {
             return true;
         }
         return false;
     case 'D':
-        return gsm_modem_reply_matches(last_line_index+1, "EACT OK\r\n");
+        return gsm_modem_reply_matches(last_line_index + 1, "EACT OK\r\n");
     case 'E':
-        return gsm_modem_reply_matches(last_line_index+1, "RROR\r\n");
+        return gsm_modem_reply_matches(last_line_index + 1, "RROR\r\n");
     case 'N':
-        if (gsm_modem_reply_matches(last_line_index+1, "O ANSWER\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "O ANSWER\r\n")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "O CARRIER\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "O CARRIER\r\n")) {
             return true;
         }
-        if (gsm_modem_reply_matches(last_line_index+1, "O DIALTONE\r\n")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "O DIALTONE\r\n")) {
             return true;
         }
         return false;
     case 'O':
-        if (allowOK && gsm_modem_reply_matches(last_line_index+1, "K\r\n")) {
+        if (allowOK && gsm_modem_reply_matches(last_line_index + 1, "K\r\n")) {
             return true;
         }
         return false;
     case 'S':
-        if (gsm_modem_reply_matches(last_line_index+1, "END ")) {
+        if (gsm_modem_reply_matches(last_line_index + 1, "END ")) {
             return true;
         }
         /* no break */
