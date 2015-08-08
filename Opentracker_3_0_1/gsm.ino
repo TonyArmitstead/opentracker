@@ -1,3 +1,5 @@
+#define MODEM_LOGGING 0
+
 //gsm functions
 char modem_command[256];  // Modem AT command buffer
 char modem_data[PACKET_SIZE]; // Modem TCP data buffer
@@ -51,15 +53,19 @@ void gsm_restart() {
 
 void gsm_send_command() {
     modem_reply[0] = '\0';
+#if MODEM_LOGGING    
     debug_print(F("gsm_send_command(): "));
     debug_println(modem_command);
+#endif    
     gsm_port.print(modem_command);
     gsm_port.print("\r");
 }
 
 void gsm_send_tcp_data() {
+#if MODEM_LOGGING    
     debug_print(F("gsm_send_tcp_data(): "));
     debug_println(modem_data);
+#endif
     gsm_port.print(modem_data);
 }
 
@@ -518,6 +524,7 @@ bool gsm_modem_reply_matches(size_t offset, const char* pMatch) {
 }
 
 void show_modem_reply() {
+#if MODEM_LOGGING    
     debug_print(F("Modem Reply: '"));
     size_t reply_len = strlen(modem_reply);
     for (size_t idx = 0; idx < reply_len; ++idx) {
@@ -538,6 +545,7 @@ void show_modem_reply() {
         }
     }
     debug_println("'");
+#endif    
 }
 
 /*!

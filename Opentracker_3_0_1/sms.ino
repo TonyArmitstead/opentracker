@@ -104,13 +104,10 @@ void sms_form_sms_update_str(
     bool ignState
 ) {
     char* pos = pStr;
+    char* lineStart = pos;
     if (((config.sms_send_flags >> SMS_SEND_LOCATION_POS)
                                  & SMS_SEND_LOCATION_MASK)
                                 == SMS_SEND_LOCATION_ON) {
-        pos = calc_snprintf_return_pointer(
-            pos, strSize - (pos-pStr),
-            snprintf(pos, strSize - (pos-pStr), "%sloc=", pos == pStr ? "" : ",")
-        );
         switch (((config.sms_send_flags >> SMS_SEND_LOCATION_FORMAT_POS)
                                          & SMS_SEND_LOCATION_FORMAT_MASK)) {
         case SMS_SEND_LOCATION_FORMAT_MAP:
@@ -123,7 +120,12 @@ void sms_form_sms_update_str(
             pos = gps_form_val_location_str(pos, strSize - (pos-pStr), pGPSData);
             break;
         }
+        pos = calc_snprintf_return_pointer(
+            pos, strSize - (pos-pStr),
+            snprintf(pos, strSize - (pos-pStr), "\n")
+        );
     }
+    lineStart = pos;
     if (((config.sms_send_flags >> SMS_SEND_NSAT_POS)
                                  & SMS_SEND_NSAT_MASK)
                                 == SMS_SEND_NSAT_ON) {
@@ -131,7 +133,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%snsat=%ul", pos == pStr ? "" : ",", pGPSData->nsats)
+                     "%snsat=%lu", pos == lineStart ? "" : ",", pGPSData->nsats)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_ALT_POS)
@@ -141,7 +143,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%salt=%.1f", pos == pStr ? "" : ",", pGPSData->alt)
+                     "%salt=%.1f", pos == lineStart ? "" : ",", pGPSData->alt)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_SPEED_POS)
@@ -151,7 +153,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sspeed=%s.1f", pos == pStr ? "" : ",", pGPSData->speed)
+                     "%sspeed=%.1f", pos == lineStart ? "" : ",", pGPSData->speed)
         );
     }
     if (((config.sms_send_flags >> SMS_SEND_IGN_POS)
@@ -161,7 +163,7 @@ void sms_form_sms_update_str(
         pos = calc_snprintf_return_pointer(
             pos, strSize - (pos-pStr),
             snprintf(pos, strSize - (pos-pStr),
-                     "%sign=%s", pos == pStr ? "" : ",", ignState ? "ON" : "OFF")
+                     "%sign=%s", pos == lineStart ? "" : ",", ignState ? "ON" : "OFF")
         );
     }
 }
@@ -309,7 +311,7 @@ void sms_locate_handler(
     const char* pPhoneNumber,
     const char* pValue
 ) {
-    if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
+    if (lastGoodGPSData.fixAge == TinyGPS::GPS_INVALID_AGE) {
         sms_send_msg("Current location not known yet", pPhoneNumber);
     } else {
         char msg[MAX_SMS_MSG_LEN+1];
@@ -659,7 +661,6 @@ void sms_srvsend_handler(
  *    AT+CMGL="REC UNREAD"\r\r\n+CMGL: 1,"REC UNREAD","+44xxxxxxxxxx","","2015/07/28 16:34:03+04"\r\n#xxxx,locate\r\n\r\nOK\r\n
  */
 void sms_check() {
-    debug_println(F("sms_check(): Started"));
     // Issue command to modem to read all unread messages
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGL=\"REC UNREAD\"");
@@ -677,19 +678,20 @@ void sms_check() {
             ++msgCount;
         }
     }
-    debug_print(F("Processed "));
-    debug_print(msgCount);
-    debug_println(F(" SMS messages"));
-    // remove all READ and SENT sms
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QMGDA=\"DEL READ\"");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QMGDA=\"DEL SENT\"");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    debug_println(F("sms_check(): Stopped"));
+    if (msgCount > 0) {
+        debug_print(F("Processed "));
+        debug_print(msgCount);
+        debug_println(F(" SMS messages"));
+        // remove all READ and SENT sms
+        snprintf(modem_command, sizeof(modem_command),
+            "AT+QMGDA=\"DEL READ\"");
+        gsm_send_command();
+        gsm_wait_for_reply(true);
+        snprintf(modem_command, sizeof(modem_command),
+            "AT+QMGDA=\"DEL SENT\"");
+        gsm_send_command();
+        gsm_wait_for_reply(true);
+    }
 }
 
 /*

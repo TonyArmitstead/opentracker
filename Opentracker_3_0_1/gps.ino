@@ -19,7 +19,7 @@ void gps_on_off() {
  * @param pGPSData points to the record to receive the GPS data
  * @param timeout how long to wait in ms to receive current data
  */
-bool read_gps_data(
+bool readGPSData(
     GPSDATA_T* pGPSData,
     unsigned long timeout
 ) {
@@ -27,7 +27,7 @@ bool read_gps_data(
     unsigned long tStart = millis();
     // Clear out any buffered received GPS data
     while (gps_port.available() && timeDiff(millis(), tStart) < timeout) {
-        (void)gps_port.read();
+        (void) gps_port.read();
     }
     while ((rStat == false) && timeDiff(millis(), tStart) < timeout) {
         if (gps_port.available()) {
@@ -80,9 +80,9 @@ char* gps_form_map_location_url(
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-                 "comgooglemaps://?q=%.6f,%.6f",
-                 pGPSData->lat, pGPSData->lon)
-    );
+            "comgooglemaps://?q=%.6f,%.6f",
+            pGPSData->lat, pGPSData->lon)
+            );
 }
 
 char* gps_form_web_location_url(
@@ -93,9 +93,9 @@ char* gps_form_web_location_url(
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-                 "https://maps.google.co.uk/maps/place/%.6f,%.6f",
-                 pGPSData->lat, pGPSData->lon)
-    );
+            "https://maps.google.co.uk/maps/place/%.6f,%.6f",
+            pGPSData->lat, pGPSData->lon)
+            );
 }
 
 char* gps_form_val_location_str(
@@ -106,8 +106,8 @@ char* gps_form_val_location_str(
     return calc_snprintf_return_pointer(
         pStr, strSize,
         snprintf(pStr, strSize,
-                 "lat=%.6f, lon=%.6f",
-                 pGPSData->lat, pGPSData->lon)
-    );
+            "lat=%.6f, lon=%.6f",
+            pGPSData->lat, pGPSData->lon)
+            );
 }
 
