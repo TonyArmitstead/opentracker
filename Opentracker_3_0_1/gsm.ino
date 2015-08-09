@@ -1,9 +1,4 @@
-#define MODEM_LOGGING 0
-
 //gsm functions
-char modem_command[256];  // Modem AT command buffer
-char modem_data[PACKET_SIZE]; // Modem TCP data buffer
-char modem_reply[200];    //data received from modem, max 200 chars
 
 void gsm_setup() {
     //setup modem pins
@@ -51,21 +46,39 @@ void gsm_restart() {
     debug_println(F("gsm_restart() completed"));
 }
 
+bool gsmSync() {
+    for (int tryCount=0; tryCount < 3; ++tryCount) {
+        snprintf(modem_command, sizeof(modem_command), "ATI");
+        gsm_send_command();
+        if (gsm_wait_for_reply(true)) {
+            debug_println(F("gsmSync() succeeded"));
+            debug_println(modem_reply);
+            return true;
+        }
+    }
+    debug_println(F("gsmSync() failed"));
+    return false;
+}
+
 void gsm_send_command() {
+    // Empty out any residual received data
+    while (gsm_port.available()) {
+        (void)gsm_port.read();
+    }
     modem_reply[0] = '\0';
-#if MODEM_LOGGING    
-    debug_print(F("gsm_send_command(): "));
-    debug_println(modem_command);
-#endif    
+    if (modemLogging) {
+        debug_print(F("gsm_send_command(): "));
+        debug_println(modem_command);
+    }
     gsm_port.print(modem_command);
     gsm_port.print("\r");
 }
 
 void gsm_send_tcp_data() {
-#if MODEM_LOGGING    
-    debug_print(F("gsm_send_tcp_data(): "));
-    debug_println(modem_data);
-#endif
+    if (modemLogging) {
+        debug_print(F("gsm_send_tcp_data(): "));
+        debug_println(modem_data);
+    }
     gsm_port.print(modem_data);
 }
 
@@ -74,7 +87,7 @@ void gsm_set_pin() {
     //checking if PIN is set 
     snprintf(modem_command, sizeof(modem_command), "AT+CPIN?");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     char *tmp = strstr(modem_reply, "SIM PIN");
     if (tmp != NULL) {
         debug_println(F("gsm_set_pin(): PIN is required"));
@@ -111,27 +124,29 @@ void gsm_set_pin() {
  * Reads a time string from the modem
  * @param pStr points to where to write the string
  * @param strSize the storage size for pStr
+ * 
+ * gsm_send_command(): AT+QLTS
+ * Modem Reply: 'AT+QLTS\r\r\n+QLTS: "15/08/09,15:01:49+04,1"\r\n\r\nOK\r\n'
  */
-void gsm_get_time(char* pStr, size_t strSize) {
+void gsmGetTime(char* pStr, size_t strSize) {
     int i;
-    //clean any serial data       
-    gsm_get_reply();
-    //get time from modem
-    snprintf(modem_command, sizeof(modem_command), "AT+CCLK?");
+    *pStr = '\0';
+    snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
     gsm_send_command();
     gsm_wait_for_reply(1);
-    char *tmp = strstr(modem_reply, "+CCLK: \"");
-    tmp += strlen("+CCLK: \"");
-    char *tmpval = strtok(tmp, "\"");
-    //copy data to main time var
-    for (i = 0; i < strlen(tmpval); i++) {
-        pStr[i] = tmpval[i];
-        if (i > 17) {  //time can not exceed 20 chars
-            break;
+    char *tStart = strstr(modem_reply, "+QLTS: \"");
+    if (tStart != NULL) {
+        unsigned year, month, day, hour, mi, sec;
+        char tz1, tz2, tz3;
+        if (sscanf(tStart+8, "%u/%u/%u,%u:%u:%u%c%c%c", 
+                   &year, &month, &day, &hour, &mi, &sec, 
+                   &tz1, &tz2, &tz3) == 9) {
+            unsigned tz = (10*(tz2-'0') + (tz3-'0'))/4;
+            snprintf(pStr, strSize, "%02u/%02u/%02u,%02u:%02u:%02u%c%02u",
+                year, month, day, hour, mi, sec, tz1, tz
+            );
         }
     }
-    //null terminate time
-    pStr[i + 1] = '\0';
 }
 
 void gsm_startup_cmd() {
@@ -146,6 +161,18 @@ void gsm_startup_cmd() {
     gsm_wait_for_reply(1);
     //set SMS as text format
     snprintf(modem_command, sizeof(modem_command), "AT+CMGF=1");
+    gsm_send_command();
+    gsm_wait_for_reply(1);
+    // Request network time sync
+    snprintf(modem_command, sizeof(modem_command), "AT+QNITZ=1");
+    gsm_send_command();
+    gsm_wait_for_reply(1);
+    // Request local time saved to RTC time
+    snprintf(modem_command, sizeof(modem_command), "AT+CTZU=3");
+    gsm_send_command();
+    gsm_wait_for_reply(1);
+    // Report network time
+    snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
     gsm_send_command();
     gsm_wait_for_reply(1);
     debug_println(F("gsm_startup_cmd() completed"));
@@ -176,15 +203,6 @@ void gsm_get_imei() {
     debug_println(preimei);
     memcpy(config.imei, preimei, 20);
     debug_println(F("gsm_get_imei() completed"));
-}
-
-void gsm_send_at() {
-    debug_println(F("gsm_send_at() started"));
-    gsm_port.print("AT");
-    gsm_port.print("\r");
-    gsm_port.print("AT");
-    gsm_port.print("\r");
-    debug_println(F("gsm_send_at() completed"));
 }
 
 int gsm_disconnect(int waitForReply) {
@@ -408,9 +426,6 @@ void gsm_send_raw_current(const char* pServerMsg) {
 int gsm_send_data(const char* pServerMsg) {
     int ret_tmp = 0;
 
-    //send 2 ATs
-    gsm_send_at();
-    gsm_wait_for_reply(1);
     //disconnect GSM
     ret_tmp = gsm_disconnect(1);
     if (ret_tmp == 1) {
@@ -421,11 +436,11 @@ int gsm_send_data(const char* pServerMsg) {
     // Disable TCP data echo
     snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     // Only allow a single TCP session
     snprintf(modem_command, sizeof(modem_command), "AT+QIMUX=0");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     //opening connection
     ret_tmp = gsm_connect();
     if (ret_tmp == 1) {
@@ -435,10 +450,9 @@ int gsm_send_data(const char* pServerMsg) {
         } else {
             gsm_send_http_current(pServerMsg);  //send all current data
         }
-        gsm_wait_for_reply(1);
         if (!SEND_RAW) {
             //get reply and parse
-            ret_tmp = parse_receive_reply();
+            ret_tmp = parse_receive_reply(10000);
         }
         gsm_disconnect(1);
         gsm_send_failures = 0;
@@ -470,20 +484,20 @@ void gsm_get_reply() {
     modem_reply[index] = '\0'; // Null terminate the string
 }
 
-void gsm_wait_for_reply(int allowOK) {
+bool gsm_wait_for_reply(bool allowOK) {
     unsigned long timeout = millis();
-
+    bool gotReply = false;
     modem_reply[0] = '\0';
     gsm_get_reply();
-    while (!gsm_is_final_result(allowOK)) {
+    while (!(gotReply = gsm_is_final_result(allowOK))) {
         if ((millis() - timeout) >= (GSM_MODEM_COMMAND_TIMEOUT * 1000)) {
             debug_println(F("Warning: timed out waiting for modem reply"));
             break;
         }
-        delay(50);
         gsm_get_reply();
     }
     show_modem_reply();
+    return gotReply;
 }
 
 void gsm_wait_at() {
@@ -496,7 +510,6 @@ void gsm_wait_at() {
             break;
         }
         gsm_get_reply();
-        delay(50);
     }
 }
 
@@ -524,28 +537,28 @@ bool gsm_modem_reply_matches(size_t offset, const char* pMatch) {
 }
 
 void show_modem_reply() {
-#if MODEM_LOGGING    
-    debug_print(F("Modem Reply: '"));
-    size_t reply_len = strlen(modem_reply);
-    for (size_t idx = 0; idx < reply_len; ++idx) {
-        switch (modem_reply[idx]) {
-        case '\r':
-            debug_print("\\r");
-            break;
-        case '\n':
-            debug_print("\\n");
-            break;
-        default:
-            if (isprint(modem_reply[idx])) {
-                debug_print(modem_reply[idx]);
-            } else {
-                debug_print("\\?");
+    if (modemLogging) {
+        debug_print(F("Modem Reply: '"));
+        size_t reply_len = strlen(modem_reply);
+        for (size_t idx = 0; idx < reply_len; ++idx) {
+            switch (modem_reply[idx]) {
+            case '\r':
+                debug_print("\\r");
+                break;
+            case '\n':
+                debug_print("\\n");
+                break;
+            default:
+                if (isprint(modem_reply[idx])) {
+                    debug_print(modem_reply[idx]);
+                } else {
+                    debug_print("\\?");
+                }
+                break;
             }
-            break;
         }
+        debug_println("'");
     }
-    debug_println("'");
-#endif    
 }
 
 /*!

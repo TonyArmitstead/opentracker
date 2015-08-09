@@ -22,8 +22,8 @@ bool formServerUpdateMessage(
         debug_println(F("formServerUpdateMessage() pGPSData has invalid age"));
     	rStat = false;
     } else {
-        char timeStr[20];
-        gsm_get_time(timeStr, DIM(timeStr));
+        char timeStr[22];
+        gsmGetTime(timeStr, DIM(timeStr));
 		pos = calc_snprintf_return_pointer(
 			pos, msgSize - (pos-pMsg),
 			snprintf(pos, msgSize - (pos-pMsg),

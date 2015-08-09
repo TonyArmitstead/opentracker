@@ -43,6 +43,13 @@ GPSDATA_T gpsData;
 char serverData[DATA_LIMIT];
 unsigned long lastServerUpdateTime;
 unsigned long serverUpdatePeriod;
+char modem_command[256];  // Modem AT command buffer
+char modem_data[PACKET_SIZE]; // Modem TCP data buffer
+char modem_reply[1024];    //data received from modem
+/**
+ * Controls the logging of commands/replies from the modem
+ */
+bool modemLogging = false;
 
 //define serial ports 
 #define gps_port Serial1
@@ -70,9 +77,8 @@ void setup() {
     gsm_setup();
     //turn on GSM
     gsm_restart();
-    //send AT
-    gsm_send_at();
-    gsm_send_at();
+    // Sync the command stream to the modem
+    gsmSync();
     //supply PIN code is needed 
     gsm_set_pin();
     //get GSM IMEI
@@ -81,6 +87,10 @@ void setup() {
     gsm_startup_cmd();
     //set GSM APN
     gsm_set_apn();
+    char timeStr[22];
+    gsmGetTime(timeStr, DIM(timeStr));
+    debug_print(F("gsm time reported as: "));
+    debug_println(timeStr);
     //get current log index
 #if STORAGE
     storage_get_index();
@@ -90,7 +100,9 @@ void setup() {
     lastServerUpdateTime = millis();
     serverUpdatePeriod = config.fast_server_interval;
     if (strlen(config.sms_send_number) != 0) {
-        sms_send_msg("System Booted", config.sms_send_number);
+        char bootMsg[80];
+        snprintf(bootMsg, DIM(bootMsg), "%s: System Booted", timeStr);
+        sms_send_msg(bootMsg, config.sms_send_number);
     }
     lastGoodGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
     gpsData.fixAge = TinyGPS::GPS_INVALID_AGE;

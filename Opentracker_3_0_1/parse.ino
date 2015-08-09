@@ -1,5 +1,7 @@
 //parse remote commands from server
-int parse_receive_reply() {
+int parse_receive_reply(
+    unsigned long timeout
+) {
     //receive reply from modem and parse it 
     int ret = 0;
     byte index = 0;
@@ -8,16 +10,17 @@ int parse_receive_reply() {
     char *tmp;
     char *tmpcmd;
     char cmd[100];  //remote commands stored here
-
+    unsigned long startTime = millis();
+    
     debug_println(F("parse_receive_reply() started"));
-    //clean modem buffer
-    gsm_get_reply();
-    for (int i = 0; i < 30; i++) {
+    cmd[0] = '\0';
+    while (timeDiff(millis(), startTime) < timeout) {
+        // Read upto 100 bytes of server return data
         snprintf(modem_command, sizeof(modem_command),
             "AT+QIRD=0,1,0,100");
         gsm_send_command();
-        gsm_wait_for_reply(1);
-        //check if no more data
+        gsm_wait_for_reply(true);
+        // check if no more data
         tmp = strstr(modem_reply, "ERROR");
         if (tmp != NULL) {
             debug_println(F("No more data available."));
