@@ -27,15 +27,16 @@ unsigned long lastSMSSendTime = 0;
 #if STORAGE
 long logindex = STORAGE_DATA_START;
 #endif
-byte saveConfig = 0;      //flag to save config to flash
-byte powerReboot = 0; //flag to reboot everything (used after new settings have been saved)
+bool saveConfig = false;      //flag to save config to flash
+bool powerReboot = false; //flag to reboot everything (used after new settings have been saved)
+bool gsmRestart = false;
 bool ignState = false;
 bool engineRunning = false;
 unsigned long engineRunningTime = 0;
 unsigned long engineStartTime;
 TinyGPS gps;
 DueFlashStorage dueFlashStorage;
-int gsm_send_failures = 0;
+unsigned gsmFailureCount = 0;
 SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
 GPSDATA_T lastReportedGPSData;
@@ -55,6 +56,29 @@ bool modemLogging = false;
 #define gps_port Serial1
 #define debug_port SerialUSB
 #define gsm_port Serial2
+
+void gsmConfigure() {
+    // supply PIN code is needed
+    gsm_set_pin();
+    // get GSM IMEI
+    gsm_get_imei();
+    // misc GSM startup commands (disable echo)
+    gsm_startup_cmd();
+    // set GSM APN
+    gsm_set_apn();
+}
+
+void sendBootMessage() {
+    if (strlen(config.sms_send_number) != 0) {
+        char timeStr[22];
+        gsmGetTime(timeStr, DIM(timeStr));
+        gsm_get_imei();
+        char bootMsg[80];
+        snprintf(bootMsg, DIM(bootMsg), "%s: System Booted IMEI=%s",
+            timeStr, config.imei);
+        sms_send_msg(bootMsg, config.sms_send_number);
+    }
+}
 
 void setup() {
     //setting serial ports
@@ -79,18 +103,7 @@ void setup() {
     gsm_restart();
     // Sync the command stream to the modem
     gsmSync();
-    //supply PIN code is needed 
-    gsm_set_pin();
-    //get GSM IMEI
-    gsm_get_imei();
-    //misc GSM startup commands (disable echo)
-    gsm_startup_cmd();
-    //set GSM APN
-    gsm_set_apn();
-    char timeStr[22];
-    gsmGetTime(timeStr, DIM(timeStr));
-    debug_print(F("gsm time reported as: "));
-    debug_println(timeStr);
+    gsmConfigure();
     //get current log index
 #if STORAGE
     storage_get_index();
@@ -99,11 +112,7 @@ void setup() {
     pinMode(PIN_S_DETECT, INPUT);
     lastServerUpdateTime = millis();
     serverUpdatePeriod = config.fast_server_interval;
-    if (strlen(config.sms_send_number) != 0) {
-        char bootMsg[80];
-        snprintf(bootMsg, DIM(bootMsg), "%s: System Booted", timeStr);
-        sms_send_msg(bootMsg, config.sms_send_number);
-    }
+    sendBootMessage();
     lastGoodGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
     gpsData.fixAge = TinyGPS::GPS_INVALID_AGE;
     lastReportedGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
@@ -145,7 +154,7 @@ void loop() {
             engineRunning = true;
         } else {
             // Update engine running time
-            engineRunningTime = millis() - engineStartTime;
+            engineRunningTime = timeDiff(millis(), engineStartTime);
         }
     } else {
         // Insert here only code that should be processed when Ignition is OFF 
@@ -195,8 +204,14 @@ void loop() {
             } else {
                 if (!gsm_send_data(serverData)) {
                     debug_println(F("Failed to send server update message"));
+                    if (++gsmFailureCount > 10) {
+                        debug_println(F("Auto request of gsm restart"));
+                        gsmFailureCount = 0;
+                        gsmRestart = true;
+                    }
                 } else {
                     debug_println(F("Server updated OK"));
+                    gsmFailureCount = 0;
                     lastServerUpdateTime = timeStart;
                     lastReportedGPSData = gpsData;
                 }
@@ -221,14 +236,22 @@ void loop() {
             }
         }
     }
-    if (saveConfig == 1) {
-        //config should be saved
+    if (saveConfig) {
+        debug_println(F("Saving config to flash"));
         settings_save();
-        saveConfig = 0;
+        saveConfig = false;
     }
-    if (powerReboot == 1) {
-        //reboot unit
+    if (gsmRestart) {
+        debug_println(F("Restarting gsm modem"));
+        gsm_restart();
+        gsmSync();
+        gsmConfigure();
+        gsmRestart = false;
+        sendBootMessage();
+    }
+    if (powerReboot) {
+        debug_println(F("Rebooting"));
         reboot();
-        powerReboot = 0;
+        powerReboot = false;
     }
 }

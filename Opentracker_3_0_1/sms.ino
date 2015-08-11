@@ -21,7 +21,9 @@ SMS_CMD_HANDLER_T smsCommands[] = {
     { "smsnumber", sms_smsnumber_handler },
     { "smsfreq", sms_smsfreq_handler },
     { "smssend", sms_smssend_handler },
-    { "srvsend", sms_srvsend_handler }
+    { "srvsend", sms_srvsend_handler },
+    { "gsmrestart", sms_gsmrestart_handler },
+    { "reboot", sms_reboot_handler }
 };
 /**
  * Max size of an SMS command string
@@ -181,8 +183,8 @@ void sms_apn_handler(
         sms_send_msg("Error: APN is too long", pPhoneNumber);
     } else {
         strcpy(config.apn, pValue);
-        saveConfig = 1;
-        powerReboot = 1;
+        saveConfig = true;
+        powerReboot = true;
         sms_send_msg("APN saved", pPhoneNumber);
     }
 }
@@ -200,8 +202,8 @@ void sms_gprspass_handler(
         sms_send_msg("Error: gprs password is too long", pPhoneNumber);
     } else {
         strcpy(config.pwd, pValue);
-        saveConfig = 1;
-        powerReboot = 1;
+        saveConfig = true;
+        powerReboot = true;
         sms_send_msg("gprs password saved", pPhoneNumber);
     }
 }
@@ -219,8 +221,8 @@ void sms_gprsuser_handler(
         sms_send_msg("Error: gprs username is too long", pPhoneNumber);
     } else {
         strcpy(config.user, pValue);
-        saveConfig = 1;
-        powerReboot = 1;
+        saveConfig = true;
+        powerReboot = true;
         sms_send_msg("gprs username saved", pPhoneNumber);
     }
 }
@@ -238,7 +240,7 @@ void sms_smskey_handler(
         sms_send_msg("Error: sms password is too long", pPhoneNumber);
     } else {
         strcpy(config.sms_key, pValue);
-        saveConfig = 1;
+        saveConfig = true;
         sms_send_msg("sms password saved", pPhoneNumber);
     }
 }
@@ -256,8 +258,8 @@ void sms_pin_handler(
         sms_send_msg("Error: sim pin is too long", pPhoneNumber);
     } else {
         strcpy(config.sim_pin, pValue);
-        saveConfig = 1;
-        powerReboot = 1;
+        saveConfig = true;
+        powerReboot = true;
         sms_send_msg("sim pin saved", pPhoneNumber);
     }
 }
@@ -277,7 +279,7 @@ void sms_sint_handler(
         sms_send_msg("Error: bad slow update interval", pPhoneNumber);
     } else {
         config.slow_server_interval = updateSecs;
-        saveConfig = 1;
+        saveConfig = true;
         sms_send_msg("Slow update interval saved", pPhoneNumber);
     }
 }
@@ -297,7 +299,7 @@ void sms_fint_handler(
         sms_send_msg("Error: bad fast update interval", pPhoneNumber);
     } else {
         config.fast_server_interval = updateSecs;
-        saveConfig = 1;
+        saveConfig = true;
         sms_send_msg("Fast update interval saved", pPhoneNumber);
     }
 }
@@ -334,7 +336,7 @@ void sms_smsnumber_handler(
         sms_send_msg("Error: sms number is too long", pPhoneNumber);
     } else {
         strcpy(config.sms_send_number, pValue);
-        saveConfig = 1;
+        saveConfig = true;
         sms_send_msg("sms number saved", pPhoneNumber);
     }
 }
@@ -354,9 +356,35 @@ void sms_smsfreq_handler(
         sms_send_msg("Error: bad frequency", pPhoneNumber);
     } else {
         config.sms_send_interval = updateSecs * 1000;
-        saveConfig = 1;
+        saveConfig = true;
         sms_send_msg("sms freq saved", pPhoneNumber);
     }
+}
+
+/**
+ * Requests a gsm restart. Use to force a gsm disconnect and reconnect cycle
+ * @param pPhoneNumber points to the text phone number we send any response to
+ * @param pValue not used (should be NULL)
+ */
+void sms_gsmrestart_handler(
+    const char* pPhoneNumber,
+    const char* pValue
+) {
+    gsmRestart = true;
+    sms_send_msg("gsm restart request received", pPhoneNumber);
+}
+
+/**
+ * Requests a system reboot
+ * @param pPhoneNumber points to the text phone number we send any response to
+ * @param pValue not used (should be NULL)
+ */
+void sms_reboot_handler(
+    const char* pPhoneNumber,
+    const char* pValue
+) {
+    powerReboot = true;
+    sms_send_msg("Reboot request received", pPhoneNumber);
 }
 
 /*

@@ -60,6 +60,27 @@ bool gsmSync() {
     return false;
 }
 
+GSMSTATUS_T gsmGetStatus() {
+    GSMSTATUS_T status = NOT_READY;
+    snprintf(modem_command, sizeof(modem_command), "AT+QNSTATUS");
+    gsm_send_command();
+    gsm_wait_for_reply(true);
+    char *pos = strstr(modem_reply, "+QNSTATUS:");
+    if (pos != NULL) {
+        pos += 10;
+        unsigned int s = 255;
+        if (sscanf(pos, "%u", &s) == 1) {
+            switch (s) {
+            case 0: status = CONNECTED; break;
+            case 1: status = NO_CELL; break;
+            case 2: status = LIMITED; break;
+            default: status = NOT_READY; break;
+            }
+        }
+    }
+    return status;
+}
+
 void gsm_send_command() {
     // Empty out any residual received data
     while (gsm_port.available()) {
@@ -101,7 +122,7 @@ void gsm_set_pin() {
                 gsm_port.print("AT+CPIN=");
                 gsm_port.print(config.sim_pin);
                 gsm_port.print("\r");
-                gsm_wait_for_reply(1);
+                gsm_wait_for_reply(true);
                 tmp = strstr(modem_reply, "OK");
                 if (tmp != NULL) {
                     debug_println(F("gsm_set_pin(): PIN is accepted"));
@@ -133,7 +154,7 @@ void gsmGetTime(char* pStr, size_t strSize) {
     *pStr = '\0';
     snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     char *tStart = strstr(modem_reply, "+QLTS: \"");
     if (tStart != NULL) {
         unsigned year, month, day, hour, mi, sec;
@@ -154,27 +175,27 @@ void gsm_startup_cmd() {
     //disable echo for TCP data
     snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     //set receiving TCP data by command
     snprintf(modem_command, sizeof(modem_command), "AT+QINDI=1");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     //set SMS as text format
     snprintf(modem_command, sizeof(modem_command), "AT+CMGF=1");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     // Request network time sync
     snprintf(modem_command, sizeof(modem_command), "AT+QNITZ=1");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     // Request local time saved to RTC time
     snprintf(modem_command, sizeof(modem_command), "AT+CTZU=3");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     // Report network time
     snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     debug_println(F("gsm_startup_cmd() completed"));
 }
 
@@ -185,7 +206,7 @@ void gsm_get_imei() {
     //get modem's imei 
     snprintf(modem_command, sizeof(modem_command), "AT+GSN");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     //reply data stored to modem_reply[200]
     char *tmp = strstr(modem_reply, "AT+GSN\r\r\n");
     tmp += strlen("AT+GSN\r\r\n");
@@ -233,13 +254,13 @@ int gsm_set_apn() {
         "AT+QIREGAPP=\"%s\",\"%s\",\"%s\"", config.apn, config.user,
         config.pwd);
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     snprintf(modem_command, sizeof(modem_command), "AT+QIDNSCFG=\"8.8.8.8\"");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     snprintf(modem_command, sizeof(modem_command), "AT+QIDNSIP=1");
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     debug_println(F("gsm_set_apn() completed"));
     return 1;
 }
@@ -284,7 +305,7 @@ int gsm_validate_tcp() {
     for (int k = 0; k < 10; k++) {
         snprintf(modem_command, sizeof(modem_command), "AT+QISACK");
         gsm_send_command();
-        gsm_wait_for_reply(1);
+        gsm_wait_for_reply(true);
         //todo check if everything is delivered
         tmp = strstr(modem_reply, "+QISACK: ");
         tmp += strlen("+QISACK: ");
@@ -321,7 +342,7 @@ void gsm_send_http_current(const char* pServerMsg) {
     snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     gsm_send_tcp_data();
     gsm_validate_tcp();
     //sending imei and key first
@@ -330,7 +351,7 @@ void gsm_send_http_current(const char* pServerMsg) {
     snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
     gsm_send_command();
-    gsm_wait_for_reply(1);
+    gsm_wait_for_reply(true);
     gsm_send_tcp_data();
     gsm_validate_tcp();
 #if 0  
@@ -347,7 +368,7 @@ void gsm_send_http_current(const char* pServerMsg) {
     for (int i = 0; i < tmp_len; i++) {
         if ((i == 0) || (chunk_pos >= PACKET_SIZE)) {
             if (chunk_pos >= PACKET_SIZE) {
-                gsm_wait_for_reply(1);
+                gsm_wait_for_reply(true);
                 //validate previous transmission  
                 gsm_validate_tcp();
                 //next chunk, get chunk length, check if not the last one                            
@@ -365,7 +386,7 @@ void gsm_send_http_current(const char* pServerMsg) {
                 "AT+QISEND=%d",
                 chunk_len);
             gsm_send_command();
-            gsm_wait_for_reply(1);
+            gsm_wait_for_reply(true);
         }
         //sending data 
         gsm_port.print(pServerMsg[i]);
@@ -396,7 +417,7 @@ void gsm_send_raw_current(const char* pServerMsg) {
     for (int i = 0; i < tmp_len; i++) {
         if ((i == 0) || (chunk_pos >= PACKET_SIZE)) {
             if (chunk_pos >= PACKET_SIZE) {
-                gsm_wait_for_reply(1);
+                gsm_wait_for_reply(true);
                 //validate previous transmission
                 gsm_validate_tcp();
                 //next chunk, get chunk length, check if not the last one
@@ -413,7 +434,7 @@ void gsm_send_raw_current(const char* pServerMsg) {
             snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
                 chunk_len);
             gsm_send_command();
-            gsm_wait_for_reply(1);
+            gsm_wait_for_reply(true);
         }
         //sending data
         gsm_port.print(pServerMsg[i]);
@@ -455,15 +476,9 @@ int gsm_send_data(const char* pServerMsg) {
             ret_tmp = parse_receive_reply(10000);
         }
         gsm_disconnect(1);
-        gsm_send_failures = 0;
     } else {
         debug_println(F("Error, can not send data, no connection."));
         gsm_disconnect(1);
-        gsm_send_failures++;
-        if (GSM_SEND_FAILURES_REBOOT > 0
-            && gsm_send_failures >= GSM_SEND_FAILURES_REBOOT) {
-            powerReboot = 1;
-        }
     }
     return ret_tmp;
 }
