@@ -36,7 +36,7 @@ unsigned long engineRunningTime = 0;
 unsigned long engineStartTime;
 TinyGPS gps;
 DueFlashStorage dueFlashStorage;
-unsigned gsmFailureCount = 0;
+unsigned long gsmFailedToUpdateTime = 0;
 SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
 GPSDATA_T lastReportedGPSData;
@@ -80,6 +80,26 @@ void sendBootMessage() {
     }
 }
 
+/*
+ * Sends an SMS message indicating that the GSM network connection has been
+ * restarted
+ * @param networkStatus the network status prior to us restarting the GSN
+ *        device
+ */
+void sendGSMRestartMessage(
+    GSMSTATUS_T networkStatus
+) {
+    if (strlen(config.sms_send_number) != 0) {
+        char timeStr[22];
+        gsmGetTime(timeStr, DIM(timeStr));
+        gsm_get_imei();
+        char bootMsg[80];
+        snprintf(bootMsg, DIM(bootMsg), "%s: GSM Restart IMEI=%s nStat=%u",
+            timeStr, config.imei, (unsigned)networkStatus);
+        sms_send_msg(bootMsg, config.sms_send_number);
+    }
+}
+
 void setup() {
     //setting serial ports
     gsm_port.begin(115200);
@@ -100,7 +120,7 @@ void setup() {
     //GSM setup
     gsm_setup();
     //turn on GSM
-    gsm_restart();
+    gsm_start();
     // Sync the command stream to the modem
     gsmSync();
     gsmConfigure();
@@ -204,14 +224,17 @@ void loop() {
             } else {
                 if (!gsm_send_data(serverData)) {
                     debug_println(F("Failed to send server update message"));
-                    if (++gsmFailureCount > 10) {
-                        debug_println(F("Auto request of gsm restart"));
-                        gsmFailureCount = 0;
+                    if (gsmFailedToUpdateTime == 0) {
+                        gsmFailedToUpdateTime = timeStart;
+                    } else if (timeDiff(timeStart, gsmFailedToUpdateTime)
+                               > 1000*60*10) {
+                        debug_println(F("Scheduling gsm restart"));
+                        gsmFailedToUpdateTime = 0;
                         gsmRestart = true;
                     }
                 } else {
                     debug_println(F("Server updated OK"));
-                    gsmFailureCount = 0;
+                    gsmFailedToUpdateTime = 0;
                     lastServerUpdateTime = timeStart;
                     lastReportedGPSData = gpsData;
                 }
@@ -243,11 +266,12 @@ void loop() {
     }
     if (gsmRestart) {
         debug_println(F("Restarting gsm modem"));
+        GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
         gsm_restart();
         gsmSync();
         gsmConfigure();
         gsmRestart = false;
-        sendBootMessage();
+        sendGSMRestartMessage(networkStatus);
     }
     if (powerReboot) {
         debug_println(F("Rebooting"));
