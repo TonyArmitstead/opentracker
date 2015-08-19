@@ -78,10 +78,8 @@ void gsm_start() {
 
 void gsm_restart() {
     debug_println(F("gsm_restart() started"));
-    // Tell modem to power down
-    snprintf(modem_command, sizeof(modem_command), "AT+QPOWD=1");
-    gsm_send_command();
     gsmPowerOff();
+    gsmIndicatePowerOn();
     gsmPowerOn();
     debug_println(F("gsm_restart() completed"));
 }
@@ -118,6 +116,19 @@ GSMSTATUS_T gsmGetNetworkStatus() {
             default: status = NOT_READY; break;
             }
         }
+    }
+    return status;
+}
+
+const char* gsmGetNetworkStatusString(
+    GSMSTATUS_T networkStatus
+) {
+    const char* status = NULL;
+    switch (networkStatus) {
+    case CONNECTED: status = "CONNECTED"; break;
+    case NO_CELL: status = "NO_CELL"; break;
+    case LIMITED: status = "LIMITED"; break;
+    default: status = "NOT_READY"; break;
     }
     return status;
 }
@@ -186,11 +197,16 @@ void gsm_set_pin() {
  * Reads a time string from the modem
  * @param pStr points to where to write the string
  * @param strSize the storage size for pStr
+ * @return true if we read a valid time, false if not
  * 
  * gsm_send_command(): AT+QLTS
  * Modem Reply: 'AT+QLTS\r\r\n+QLTS: "15/08/09,15:01:49+04,1"\r\n\r\nOK\r\n'
  */
-void gsmGetTime(char* pStr, size_t strSize) {
+bool gsmGetTime(
+    char* pStr,
+    size_t strSize
+) {
+    bool validTime = false;
     int i;
     *pStr = '\0';
     snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
@@ -207,8 +223,10 @@ void gsmGetTime(char* pStr, size_t strSize) {
             snprintf(pStr, strSize, "%02u/%02u/%02u,%02u:%02u:%02u%c%02u",
                 year, month, day, hour, mi, sec, tz1, tz
             );
+            validTime = true;
         }
     }
+    return validTime;
 }
 
 void gsm_startup_cmd() {
@@ -240,47 +258,75 @@ void gsm_startup_cmd() {
     debug_println(F("gsm_startup_cmd() completed"));
 }
 
-void gsm_get_imei() {
+/**
+ * Checks that a string of digits makes up a valid IMEI number
+ * @param pIMEI points to the string of digits
+ * @param lenIMEI number of characters in pIMEI
+ * @returns true if digitd check out, false if not
+ * @note see http://imei-number.com/check-digit-calculation
+ */
+bool checkValidIMEI(
+    const char* pIMEI,
+    size_t lenIMEI
+) {
+    bool isValid = false;
+    if (lenIMEI > 1) {
+        const char* pDigit = pIMEI + lenIMEI - 1;
+        unsigned sum = (*pDigit--) - '0';
+        for (bool doDouble = false; pDigit >= pIMEI; doDouble = !doDouble) {
+            unsigned d = (*pDigit--) - '0';
+            debug_print(d);
+            sum += doDouble ? ((2*d) / 10) + ((2*d) % 10) : d;
+        }
+        isValid = ((sum % 10) == 0);
+    }
+    return isValid;
+}
+
+/**
+ * Reads the IMEI number (as a string) from the modem
+ * @param pStr points to where to write the string
+ * @param strSize the storage size for pStr
+ * @return true if we read a valid IMEI number, false if not
+ */
+bool gsmGetIMEI(
+    char* pStr,
+    size_t strSize
+) {
     bool validIMEI = false;
-    debug_println(F("gsm_get_imei() started"));
+    // For unknown reasons we can sometimes read a duff IMEI number from the
+    // modem, so we try a number of times to get a good IMEI number
     for (int tryCount=0; !validIMEI && (tryCount < 10); ++tryCount) {
-        int i;
-        //get modem's imei 
+        // Get modem's IMEI number
         snprintf(modem_command, sizeof(modem_command), "AT+GSN");
         gsm_send_command();
         gsm_wait_for_reply(true);
-        // 'AT+GSN\r\r\n8x3x7x0x6x0x6x5\r\n\r\nOK\r\n'
-        char* src = strstr(modem_reply, "AT+GSN\r\r\n");
-        if (src != NULL) {
-            src += strlen("AT+GSN\r\r\n");
-            char* dst = config.imei;
-            // copy data to main IMEI var
-            for (i = 0; !validIMEI && (i < DIM(config.imei)-1); i++, ++src) {
-                if (*src == '\r') {
-                    *dst = '\0';
-                    if (strlen(config.imei) >= 14) {
-                        // Should really check validity:
-                        // See:https://en.wikipedia.org/wiki/International_Mobile_Station_Equipment_Identity    
-                        validIMEI = true;
+        // Should get a reply like: 'AT+GSN\r\r\n8x3x7x0x6x0x6x5\r\n\r\nOK\r\n'
+        char* pSrc = strstr(modem_reply, "AT+GSN\r\r\n");
+        if (pSrc != NULL) {
+            // Step to start of IMEI number
+            pSrc += strlen("AT+GSN\r\r\n");
+            // copy IMEI string
+            for (char* pDst = pStr;
+                 !validIMEI && ((pDst - pStr) < strSize-1);
+                 ++pSrc) {
+                if (*pSrc == '\r') {
+                    *pDst = '\0';
+                    size_t len = pDst-pStr+1;
+                    if (len  == IMEI_LEN) {
+                        validIMEI = checkValidIMEI(pStr, len);
                     }
+                } else if (isdigit(*pSrc)) {
+                    // Copy over valid digit
+                    *pDst++ = *pSrc;
                 } else {
-                    if (isdigit(*src)) {
-                        *dst++ = *src;
-                    } else {
-                        break;
-                    }
+                    // Found non-digit so abandon this try
+                    break;
                 }
             }
         }
     }
-    if (validIMEI) {
-        debug_println(F("gsm_get_imei() result:"));
-        debug_println(config.imei);
-    } else {
-        debug_println(F("gsm_get_imei() Failed to read valied IMEI"));
-        powerReboot = true;
-    }
-    debug_println(F("gsm_get_imei() completed"));
+    return validIMEI;
 }
 
 int gsm_disconnect(int waitForReply) {

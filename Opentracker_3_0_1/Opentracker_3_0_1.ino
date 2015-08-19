@@ -57,11 +57,33 @@ bool modemLogging = false;
 #define debug_port SerialUSB
 #define gsm_port Serial2
 
+/**
+ * Safe string copy to copy a string with limited length and guaranteed
+ * '\0' termination
+ * @param pDst destination buffer to write the string into
+ * @param pSrc the string source
+ * @param sz the size of the destination buffer
+ */
+void strncopy(
+    char* pDst,
+    const char* pSrc,
+    size_t sz
+) {
+    strncpy(pDst, pSrc, sz);
+    pDst[sz-1] = '\0';
+}
+
 void gsmConfigure() {
     // supply PIN code is needed
     gsm_set_pin();
     // get GSM IMEI
-    gsm_get_imei();
+    if (!gsmGetIMEI(config.imei, DIM(config.imei))) {
+        debug_print(F("gsmConfigure() read bad IMEI: "));
+        debug_println(config.imei);
+        // Replace bad IMEI with a string which when sent to the server
+        // should not match a real IMEI
+        //strncopy(config.imei, BAD_IMEI, DIM(config.imei));
+    }
     // misc GSM startup commands (disable echo)
     gsm_startup_cmd();
     // set GSM APN
@@ -71,11 +93,16 @@ void gsmConfigure() {
 void sendBootMessage() {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
-        gsmGetTime(timeStr, DIM(timeStr));
-        gsm_get_imei();
+        if (!gsmGetTime(timeStr, DIM(timeStr))) {
+            strncopy(timeStr, BAD_TIME, DIM(timeStr));
+        }
+        char imeiStr[20];
+        if (!gsmGetIMEI(imeiStr, DIM(imeiStr))) {
+            strncopy(imeiStr, BAD_IMEI, DIM(imeiStr));
+        }
         char bootMsg[80];
         snprintf(bootMsg, DIM(bootMsg), "%s: System Booted IMEI=%s",
-            timeStr, config.imei);
+            timeStr, imeiStr);
         sms_send_msg(bootMsg, config.sms_send_number);
     }
 }
@@ -91,11 +118,16 @@ void sendGSMRestartMessage(
 ) {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
-        gsmGetTime(timeStr, DIM(timeStr));
-        gsm_get_imei();
+        if (!gsmGetTime(timeStr, DIM(timeStr))) {
+            strncopy(timeStr, BAD_TIME, DIM(timeStr));
+        }
+        char imeiStr[20];
+        if (!gsmGetIMEI(imeiStr, DIM(imeiStr))) {
+            strncopy(imeiStr, BAD_IMEI, DIM(imeiStr));
+        }
         char bootMsg[80];
-        snprintf(bootMsg, DIM(bootMsg), "%s: GSM Restart IMEI=%s nStat=%u",
-            timeStr, config.imei, (unsigned)networkStatus);
+        snprintf(bootMsg, DIM(bootMsg), "%s: GSM Restart IMEI=%s nStat=%s",
+            timeStr, imeiStr, gsmGetNetworkStatusString(networkStatus));
         sms_send_msg(bootMsg, config.sms_send_number);
     }
 }
@@ -151,7 +183,6 @@ void setup() {
  *                   |                       |
  *        start_time-+***********************+-end_time
  */
-
 unsigned long timeDiff(unsigned long end_time, unsigned long start_time) {
     if (end_time >= start_time) {
         return end_time - start_time;
@@ -162,6 +193,7 @@ unsigned long timeDiff(unsigned long end_time, unsigned long start_time) {
 void loop() {
     //start counting time
     unsigned long timeStart = millis();
+    GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
     status_led();
     // Check if ignition is turned on
     ignState = (digitalRead(PIN_S_DETECT) == 0);
@@ -214,7 +246,9 @@ void loop() {
         if (timeSinceLastServerUpdate
             < 1000 * serverUpdatePeriod) {
             debug_print(F("Seconds to next server update = "));
-            debug_println((1000 * serverUpdatePeriod - timeSinceLastServerUpdate)/1000);
+            debug_print((1000 * serverUpdatePeriod - timeSinceLastServerUpdate)/1000);
+            debug_print(F(", Network Status = "));
+            debug_println(gsmGetNetworkStatusString(networkStatus));
         } else {
             debug_println(F("Is time to update server"));
             if (!formServerUpdateMessage(
@@ -266,7 +300,6 @@ void loop() {
     }
     if (gsmRestart) {
         debug_println(F("Restarting gsm modem"));
-        GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
         gsm_restart();
         gsmSync();
         gsmConfigure();

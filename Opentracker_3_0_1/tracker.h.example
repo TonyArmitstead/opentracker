@@ -3,7 +3,9 @@
 #define CR '\r'
 #define LF '\n'
 #define MAX_PHONE_NUMBER_LEN 16  // Max number of digits in a phone number
-
+const char* BAD_IMEI = "?IMEI?";
+const char* BAD_TIME = "?TIME?";
+#define IMEI_LEN 15 // 14 digits + 1 check digit
 #define LED_INTERVAL 1000 // interval at which to blink status led (milliseconds)
 
 //default settings (can be overwritten and stored in EEPRom)
@@ -141,10 +143,6 @@
 #define HTTP_PORT "80"
 #define URL "/index.php"
 
-#define DEFAULT_APN "prepay.tesco-mobile.com"  //default APN
-#define DEFAULT_USER "tescowap"  //default APN user
-#define DEFAULT_PASS "password"  //default APN pass
-
 #define DEFAULT_APN ""  //default APN
 #define DEFAULT_USER ""  //default APN user
 #define DEFAULT_PASS ""  //default APN pass
@@ -189,7 +187,7 @@ typedef struct GPSDATA_S {
  * Definition of the configuration settings
  */
 typedef struct SETTINGS_S {
-    char apn[40];           // GPS APN string
+    char apn[32];           // GPS APN string (max. allowed len is 31 chars)
     char user[20];          // GPS user name
     char pwd[20];           // GPS password
     unsigned short slow_server_interval; // slow server update interval in s
@@ -197,7 +195,7 @@ typedef struct SETTINGS_S {
     char key[12]; //key for connection, will be sent with every data transmission
     char sim_pin[5];        //PIN for SIM card
     char sms_key[MAX_SMS_KEY_LEN+1]; // password for SMS commands
-    char imei[20];          // IMEI number
+    char imei[IMEI_LEN+1];           // IMEI number
     unsigned long server_send_flags; // Bit set of what data to send to server
     unsigned long sms_send_interval; // How often (in ms) to send SMS message containing location data
     char sms_send_number[MAX_PHONE_NUMBER_LEN+1];
