@@ -2,7 +2,7 @@ void reboot() {
     debug_println(F("reboot() started"));
     //reboot only works with normal power, without programming cable connected
     //turn off modem, GPS            
-    gsmPowerOn();
+    gsmPowerOff();
     //turn off GPS
     digitalWrite(PIN_STANDBY_GPS, HIGH);
     //wait 4 sec

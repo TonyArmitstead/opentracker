@@ -1,6 +1,7 @@
-//gsm functions
-
-void gsm_setup() {
+/**
+ * Sets the IO pins (directions) for the modem
+ */
+void gsmSetupPIO() {
     //setup modem pins
     debug_println(F("gsm_setup() started"));
     pinMode(PIN_C_PWR_GSM, OUTPUT);
@@ -13,46 +14,60 @@ void gsm_setup() {
     debug_println(F("gsm_setup() finished"));
 }
 
-void gsmPowerOn() {
+/**
+ * Powers on the gsm modem
+ * @returns true if gsm modem powered up ok, false if not
+ */
+bool gsmPowerOn() {
+    bool isPoweredOn = false;
     debug_println(F("gsmPowerOn() started"));
-    if (digitalRead(PIN_STATUS_GSM) == LOW) {
-        //turn on the modem
+    if (digitalRead(PIN_STATUS_GSM) == LOW) { // i.e. is OFF
+        // turn on the modem
         digitalWrite(PIN_C_PWR_GSM, HIGH);
-        delay(200); // min of 100ms (though 100ms does not work reliably)
-        digitalWrite(PIN_C_PWR_GSM, LOW);
+        delay(1000);
         // Wait for chip to power up
         unsigned long tStart = millis();
-        while (digitalRead(PIN_STATUS_GSM) == LOW) {
-            if (timeDiff(millis(), tStart) > 2000) {
-                debug_println(F("gsmPowerOn() timeout waiting for GSM turn on"));
+        while (timeDiff(millis(), tStart) < 2000) {
+            if (digitalRead(PIN_STATUS_GSM) == HIGH) {
+                debug_println(F("gsmPowerOn() gsm modem powered on"));
+                isPoweredOn = true;
                 break;
             }
         }
-        // Give it 5s to boot up
-        delay(5000);
+        digitalWrite(PIN_C_PWR_GSM, LOW);
+        if (isPoweredOn) {
+            // Give it 5s to boot up
+            delay(5000);
+        }
     } else {
-        debug_println(F("gsmPowerOn() ERROR: GSM already on"));
+        debug_println(F("gsmPowerOn() ERROR: gsm modem already on"));
+        isPoweredOn = true;
     }
     debug_println(F("gsmPowerOn() finished"));
+    return isPoweredOn;
 }
 
+/**
+ * Powers off the gsm modem
+ */
 void gsmPowerOff() {
     debug_println(F("gsmPowerOff() started"));
-    if (digitalRead(PIN_STATUS_GSM) == LOW) {
-        //turn on the modem
+    if (digitalRead(PIN_STATUS_GSM) == HIGH) { // i.e. is ON
+        // turn off the modem
         digitalWrite(PIN_C_PWR_GSM, HIGH);
-        delay(800);
+        delay(800); // 700..1000ms pulse to turn off
         digitalWrite(PIN_C_PWR_GSM, LOW);
         // Wait for chip to power down
         unsigned long tStart = millis();
-        while (digitalRead(PIN_STATUS_GSM) == HIGH) {
-            if (timeDiff(millis(), tStart) > 12000) {
-                debug_println(F("gsm_restart() timeout waiting for GSM turn off"));
+        // Should power down within 12s
+        while (timeDiff(millis(), tStart) < 12000) {
+            if (digitalRead(PIN_STATUS_GSM) == LOW) {
+                debug_println(F("gsmPowerOff() gsm modem powered down"));
                 break;
             }
         }
     } else {
-        debug_println(F("gsmPowerOff() ERROR: GSM already off"));
+        debug_println(F("gsmPowerOff() ERROR: gsm modem already off"));
     }
     debug_println(F("gsmPowerOff() finished"));
 }
@@ -69,36 +84,34 @@ void gsmIndicatePowerOn() {
     }
 }
 
-void gsm_start() {
-    debug_println(F("gsm_start() started"));
-    gsmIndicatePowerOn();
-    gsmPowerOn();
-    debug_println(F("gsm_start() completed"));
-}
-
-void gsm_restart() {
-    debug_println(F("gsm_restart() started"));
-    gsmPowerOff();
-    gsmIndicatePowerOn();
-    gsmPowerOn();
-    debug_println(F("gsm_restart() completed"));
-}
-
-bool gsmSync() {
+/**
+ * Tries to synchronise the UART comms with the modem. We send AT commands
+ * until the modem responds with OK.
+ * @params timeout how long to wait for comms sync to be acheived
+ * @returns true if comms sync'd OK, false if not
+ */
+bool gsmSyncComms(
+    unsigned timeout
+) {
     unsigned long tStart = millis();
-    while (timeDiff(millis(), tStart) < 2000) {
+    while (timeDiff(millis(), tStart) < timeout) {
         snprintf(modem_command, sizeof(modem_command), "AT");
         gsm_send_command();
         if (gsm_wait_for_reply(true)) {
-            debug_println(F("gsmSync() succeeded"));
+            debug_println(F("gsmSyncComms() succeeded"));
             debug_println(modem_reply);
             return true;
         }
     }
-    debug_println(F("gsmSync() failed"));
+    debug_println(F("gsmSyncComms() failed"));
     return false;
 }
 
+/**
+ * Determines the modem connection status i.e. whether the modem is
+ * currently operational
+ * @returns one of the GSMSTATUS_E values
+ */
 GSMSTATUS_T gsmGetNetworkStatus() {
     GSMSTATUS_T status = NOT_READY;
     snprintf(modem_command, sizeof(modem_command), "AT+QNSTATUS");
@@ -120,6 +133,11 @@ GSMSTATUS_T gsmGetNetworkStatus() {
     return status;
 }
 
+/**
+ * Converts a gsm network status to a string form
+ * @param networkStatus the network status value (from GSMSTATUS_T)
+ * @returns a string which indicates the network status
+ */
 const char* gsmGetNetworkStatusString(
     GSMSTATUS_T networkStatus
 ) {
@@ -273,7 +291,7 @@ bool checkValidIMEI(
     if (lenIMEI > 1) {
         const char* pDigit = pIMEI + lenIMEI - 1;
         unsigned sum = (*pDigit--) - '0';
-        for (bool doDouble = false; pDigit >= pIMEI; doDouble = !doDouble) {
+        for (bool doDouble = true; pDigit >= pIMEI; doDouble = !doDouble) {
             unsigned d = (*pDigit--) - '0';
             debug_print(d);
             sum += doDouble ? ((2*d) / 10) + ((2*d) % 10) : d;
@@ -288,6 +306,8 @@ bool checkValidIMEI(
  * @param pStr points to where to write the string
  * @param strSize the storage size for pStr
  * @return true if we read a valid IMEI number, false if not
+ * @note even when we return false, we still return the (bad) IMEI number
+ *       in pStr
  */
 bool gsmGetIMEI(
     char* pStr,
@@ -307,26 +327,69 @@ bool gsmGetIMEI(
             // Step to start of IMEI number
             pSrc += strlen("AT+GSN\r\r\n");
             // copy IMEI string
+            bool allDone = false;
             for (char* pDst = pStr;
-                 !validIMEI && ((pDst - pStr) < strSize-1);
+                 !allDone && ((pDst - pStr) < strSize-1);
                  ++pSrc) {
-                if (*pSrc == '\r') {
-                    *pDst = '\0';
-                    size_t len = pDst-pStr+1;
-                    if (len  == IMEI_LEN) {
-                        validIMEI = checkValidIMEI(pStr, len);
-                    }
-                } else if (isdigit(*pSrc)) {
+                if (isdigit(*pSrc)) {
                     // Copy over valid digit
                     *pDst++ = *pSrc;
+                } else if (*pSrc == '\r') {
+                    // End of IMEI number located
+                    *pDst = '\0';
+                    size_t len = pDst-pStr; // NOTE no +1 since pDst -> '\0'
+                    if (len == IMEI_LEN) {
+                        validIMEI = checkValidIMEI(pStr, len);
+                    }
+                    allDone = true;
                 } else {
                     // Found non-digit so abandon this try
-                    break;
+                    allDone = true;
                 }
             }
         }
     }
     return validIMEI;
+}
+
+/**
+ * Configures the GSM modem
+ */
+void gsmConfigure() {
+    // supply PIN code is needed
+    gsm_set_pin();
+    // get GSM IMEI
+    if (!gsmGetIMEI(config.imei, DIM(config.imei))) {
+        debug_print(F("gsmConfigure() read bad IMEI: "));
+        debug_println(config.imei);
+        // Replace bad IMEI with a string which when sent to the server
+        // should not match a real IMEI
+        //strncopy(config.imei, BAD_IMEI, DIM(config.imei));
+    }
+    // misc GSM startup commands (disable echo)
+    gsm_startup_cmd();
+    // set GSM APN
+    gsm_set_apn();
+}
+
+/**
+ * Waits for the modem to have a connection to the GSM network
+ * @param timeout the ms timeout we are prepared to wait for the connection
+ *        to be made
+ * @return true if a connection was made, false if not
+ */
+bool gsmWaitForConnection(
+    unsigned timeout
+) {
+    unsigned tStart = millis();
+    GSMSTATUS_T status = NOT_READY;
+    while (timeDiff(millis(), tStart) < timeout) {
+        status = gsmGetNetworkStatus();
+        if (status == CONNECTED) {
+            break;
+        }
+    }
+    return (status == CONNECTED);
 }
 
 int gsm_disconnect(int waitForReply) {

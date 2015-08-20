@@ -1,11 +1,7 @@
 #include <limits.h>
-//tracker config
 #include "tracker.h" 
-
-//External libraries
 #include <TinyGPS.h>  
 #include <avr/dtostrf.h>
-
 #include <DueFlashStorage.h>
 
 #ifdef DEBUG
@@ -73,23 +69,9 @@ void strncopy(
     pDst[sz-1] = '\0';
 }
 
-void gsmConfigure() {
-    // supply PIN code is needed
-    gsm_set_pin();
-    // get GSM IMEI
-    if (!gsmGetIMEI(config.imei, DIM(config.imei))) {
-        debug_print(F("gsmConfigure() read bad IMEI: "));
-        debug_println(config.imei);
-        // Replace bad IMEI with a string which when sent to the server
-        // should not match a real IMEI
-        //strncopy(config.imei, BAD_IMEI, DIM(config.imei));
-    }
-    // misc GSM startup commands (disable echo)
-    gsm_startup_cmd();
-    // set GSM APN
-    gsm_set_apn();
-}
-
+/**
+ * Sends a boot up message to the configured SMS phone (if any)
+ */
 void sendBootMessage() {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
@@ -132,7 +114,28 @@ void sendGSMRestartMessage(
     }
 }
 
+/**
+ * Gets the gsm modem powered up and ready for operation
+ */
+void powerUpGSMModem() {
+    gsmIndicatePowerOn();
+    if (!gsmPowerOn()) {
+        debug_println(F("powerUpGSMModem() Did not manage to power on gsm modem"));
+        // Yikes! What else can we do?
+        reboot();
+    } else {
+        // Sync the command stream to the modem
+        gsmSyncComms(2000);
+        // Setup the modem
+        gsmConfigure();
+        if (!gsmWaitForConnection(5000)) {
+            debug_println(F("powerUpGSMModem() did not get a gsm connection"));
+        }
+    }
+}
+
 void setup() {
+    powerReboot = false;
     //setting serial ports
     gsm_port.begin(115200);
     debug_port.begin(9600);
@@ -150,14 +153,11 @@ void setup() {
     gps_setup();
     gps_on_off();
     //GSM setup
-    gsm_setup();
-    //turn on GSM
-    gsm_start();
-    // Sync the command stream to the modem
-    gsmSync();
-    gsmConfigure();
-    //get current log index
+    gsmSetupPIO();
+    // turn on GSM
+    powerUpGSMModem();
 #if STORAGE
+    //get current log index
     storage_get_index();
 #endif     
     //setup ignition detection
@@ -300,9 +300,8 @@ void loop() {
     }
     if (gsmRestart) {
         debug_println(F("Restarting gsm modem"));
-        gsm_restart();
-        gsmSync();
-        gsmConfigure();
+        gsmPowerOff();
+        powerUpGSMModem();
         gsmRestart = false;
         sendGSMRestartMessage(networkStatus);
     }
