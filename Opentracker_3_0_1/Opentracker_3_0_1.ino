@@ -282,7 +282,7 @@ void loop() {
             > 1000 * config.sms_send_interval) {
             if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
                 debug_println(F("Was time to send SMS location but "
-                        "no location data available"));
+                                "no location data available"));
             } else {
                 debug_println(F("Sending SMS location data"));
                 char msg[MAX_SMS_MSG_LEN + 1];

@@ -355,7 +355,7 @@ void sms_smsfreq_handler(
     if (updateSecs <= 0) {
         sms_send_msg("Error: bad frequency", pPhoneNumber);
     } else {
-        config.sms_send_interval = updateSecs * 1000;
+        config.sms_send_interval = updateSecs;
         saveConfig = true;
         sms_send_msg("sms freq saved", pPhoneNumber);
     }
