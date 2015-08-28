@@ -75,10 +75,10 @@ void strncopy(
 void sendBootMessage() {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
-        if (!gsmGetTime(timeStr, DIM(timeStr))) {
+        if (!gsmGetTime(timeStr, DIM(timeStr), SECS(5))) {
             strncopy(timeStr, BAD_TIME, DIM(timeStr));
         }
-        char imeiStr[20];
+        char imeiStr[IMEI_LEN+1];
         if (!gsmGetIMEI(imeiStr, DIM(imeiStr))) {
             strncopy(imeiStr, BAD_IMEI, DIM(imeiStr));
         }
@@ -100,10 +100,10 @@ void sendGSMRestartMessage(
 ) {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
-        if (!gsmGetTime(timeStr, DIM(timeStr))) {
+        if (!gsmGetTime(timeStr, DIM(timeStr), SECS(5))) {
             strncopy(timeStr, BAD_TIME, DIM(timeStr));
         }
-        char imeiStr[20];
+        char imeiStr[IMEI_LEN+1];
         if (!gsmGetIMEI(imeiStr, DIM(imeiStr))) {
             strncopy(imeiStr, BAD_IMEI, DIM(imeiStr));
         }
@@ -125,11 +125,18 @@ void powerUpGSMModem() {
         reboot();
     } else {
         // Sync the command stream to the modem
-        gsmSyncComms(2000);
+        gsmSyncComms(SECS(5));
         // Setup the modem
         gsmConfigure();
-        if (!gsmWaitForConnection(5000)) {
+        // Wait up to 60s for a gsm connection
+        if (!gsmWaitForConnection(SECS(60))) {
             debug_println(F("powerUpGSMModem() did not get a gsm connection"));
+        } else {
+            // Wait up to 60s for time sync
+            char timeStr[22];
+            if (!gsmGetTime(timeStr, DIM(timeStr), SECS(60))) {
+                debug_println(F("powerUpGSMModem() did not get time sync"));
+            }
         }
     }
 }
@@ -145,7 +152,6 @@ void setup() {
     digitalWrite(PIN_POWER_LED, LOW);
     pinMode(PIN_C_REBOOT, OUTPUT);
     digitalWrite(PIN_C_REBOOT, LOW);  //this is required
-    debug_println(F("setup() started"));
     //blink software start
     blink_start();
     settings_load();
@@ -168,7 +174,6 @@ void setup() {
     lastGoodGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
     gpsData.fixAge = TinyGPS::GPS_INVALID_AGE;
     lastReportedGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
-    debug_println(F("setup() completed"));
 }
 
 /**
@@ -278,9 +283,15 @@ void loop() {
     // Check if sending SMS location updates
     if ((strlen(config.sms_send_number) != 0) &&
         (config.sms_send_interval != 0)) {
-        if (timeDiff(timeStart, lastSMSSendTime)
-            > 1000 * config.sms_send_interval) {
-            if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
+        // Is it time to send an SMS update?
+        unsigned long timeSinceLastSMSUpdate =
+            timeDiff(timeStart, lastSMSSendTime);
+        if (timeSinceLastSMSUpdate
+            < 1000 * config.sms_send_interval) {
+            debug_print(F("Seconds to next SMS update = "));
+            debug_println((1000 * config.sms_send_interval - timeSinceLastSMSUpdate)/1000);
+        } else {
+            if (lastGoodGPSData.fixAge == TinyGPS::GPS_INVALID_AGE) {
                 debug_println(F("Was time to send SMS location but "
                                 "no location data available"));
             } else {

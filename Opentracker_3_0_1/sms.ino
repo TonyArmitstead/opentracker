@@ -683,7 +683,7 @@ void sms_check() {
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGL=\"REC UNREAD\"");
     gsm_send_command();
-    gsm_wait_for_reply(true);
+    gsmWaitForReply(true, SECS(1));
     const char* msgStart = modem_reply;
     unsigned int msgCount = 0;
     while (msgStart != NULL) {
@@ -704,11 +704,11 @@ void sms_check() {
         snprintf(modem_command, sizeof(modem_command),
             "AT+QMGDA=\"DEL READ\"");
         gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmWaitForReply(true, SECS(2));
         snprintf(modem_command, sizeof(modem_command),
             "AT+QMGDA=\"DEL SENT\"");
         gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmWaitForReply(true, SECS(2));
     }
 }
 
@@ -846,13 +846,13 @@ void sms_send_msg(
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGS=\"%s\"", pPhoneNumber);
     gsm_send_command();
-    gsm_wait_for_reply(false);
+    gsmWaitForReply(false, GSM_MODEM_COMMAND_TIMEOUT);
     char *tmp = strstr(modem_reply, ">");
     if (tmp != NULL) {
         gsm_port.print(pMsg);
         //sending ctrl+z
         gsm_port.print("\x1A");
-        gsm_wait_for_reply(1);
+        gsmWaitForReply(true, GSM_MODEM_COMMAND_TIMEOUT);
     }
 }
 
