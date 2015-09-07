@@ -201,6 +201,7 @@ void storageGPSScan(
     while (!scanComplete) {
         switch (pGPSData->marker) {
         case STORED_GPSDATA_START:
+            // Have located the oldest record
             if (pIndexData->pOldest == NULL) {
                 // Record 1st oldest marker record
                 pIndexData->pOldest = pGPSData;
@@ -217,6 +218,8 @@ void storageGPSScan(
         case STORED_GPSDATA_EMPTY:
             break;
         default:
+            // Invalid marker = duff flash (or maybe we have changed the record
+            // format)
             pIndexData->storeValid = false;
             scanComplete = true;
             break;
@@ -232,10 +235,13 @@ void storageGPSScan(
             // and valid records
             if (pIndexData->count > 0) {
                 pIndexData->storeValid = false;
+            } else {
+                pIndexData->pOldest = storageGetGPSFirst();
             }
         } else {
             // Did find a start (oldest) record, so check we got a consecutive
-            // sequence of valid records following it
+            // sequence of valid records following it. This checks we see
+            // something like EEEESVVVEEEE and not EEEESVVVEVEE.
             pGPSFirst = pIndexData->pOldest;
             pGPSData = pGPSFirst;
             size_t validCount = 0;
@@ -243,8 +249,6 @@ void storageGPSScan(
             while (!scanComplete) {
                 switch (pGPSData->marker) {
                 case STORED_GPSDATA_START:
-                    validCount += 1;
-                    break;
                 case STORED_GPSDATA_VALID:
                     validCount += 1;
                     break;
@@ -321,9 +325,14 @@ bool storageWriteGPSDataToFlash(
 void storageGPSDataInit() {
     storageGPSScan(&gpsDataIndex);
     if (!gpsDataIndex.storeValid) {
+        debug_println(F("storageGPSDataInit: wiping flash"));
         gpsDataIndex.count = 0;
         gpsDataIndex.pOldest = storageGetGPSFirst();
         gpsDataIndex.storeValid = storageWipeGPSData(); 
+    } else {
+        debug_print(F("storageGPSDataInit: flash is OK and holding "));
+        debug_print(gpsDataIndex.count);
+        debug_println(F(" records"));
     }
 }
 
@@ -342,9 +351,6 @@ bool storageWriteGPSData(
             STORED_GPSDATA_T* pStoredGPSData = storageGetGPSFirst();
             writtenOK = storageWriteGPSDataToFlash(
                             pStoredGPSData, STORED_GPSDATA_START, pGPSData);
-            if (!writtenOK) {
-                debug_println(F("storageSaveGPSData: failed to update flash"));
-            }
             gpsDataIndex.count = 1;
             gpsDataIndex.pOldest = pStoredGPSData;
         } else if (gpsDataIndex.count == DIM_STORED_GPSDATA) {
@@ -369,6 +375,7 @@ bool storageWriteGPSData(
             gpsDataIndex.count += 1;
         }
         if (!writtenOK) {
+            debug_println(F("storageSaveGPSData: failed to update flash"));
             gpsDataIndex.storeValid = false;
             debug_println(F("storageSaveGPSData: marked flash as invalid"));
         }
