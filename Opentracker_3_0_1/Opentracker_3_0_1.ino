@@ -1,8 +1,11 @@
 #include <limits.h>
-#include "tracker.h" 
+#include <stdint.h>
 #include <TinyGPS.h>  
 #include <avr/dtostrf.h>
 #include <DueFlashStorage.h>
+#include "tracker.h"
+#include "storage.h"
+#include "secrets.h"
 
 #ifdef DEBUG
 #define debug_print(x)  debug_port.print(x)
@@ -20,9 +23,6 @@
 int ledState = LOW;             // ledState used to set the LED
 unsigned long previousMillis = 0;        // will store last time LED was updated
 unsigned long lastSMSSendTime = 0;
-#if STORAGE
-long logindex = STORAGE_DATA_START;
-#endif
 bool saveConfig = false;      //flag to save config to flash
 bool powerReboot = false; //flag to reboot everything (used after new settings have been saved)
 bool gsmRestart = false;
@@ -156,10 +156,8 @@ void setup() {
     gsmSetupPIO();
     // turn on GSM
     powerUpGSMModem();
-#if STORAGE
-    //get current log index
-    storage_get_index();
-#endif     
+    // Initialise GPS flash storage
+    storageGPSDataInit();
     //setup ignition detection
     pinMode(PIN_S_DETECT, INPUT);
     lastServerUpdateTime = millis();
