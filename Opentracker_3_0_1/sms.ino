@@ -678,12 +678,12 @@ void sms_srvsend_handler(
  *  e.g.
  *    AT+CMGL="REC UNREAD"\r\r\n+CMGL: 1,"REC UNREAD","+44xxxxxxxxxx","","2015/07/28 16:34:03+04"\r\n#xxxx,locate\r\n\r\nOK\r\n
  */
-void sms_check() {
+void smsRequestCheck() {
     // Issue command to modem to read all unread messages
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGL=\"REC UNREAD\"");
     gsm_send_command();
-    gsmWaitForReply(true, SECS(1));
+    gsm_wait_for_reply(true);
     const char* msgStart = modem_reply;
     unsigned int msgCount = 0;
     while (msgStart != NULL) {
@@ -704,11 +704,11 @@ void sms_check() {
         snprintf(modem_command, sizeof(modem_command),
             "AT+QMGDA=\"DEL READ\"");
         gsm_send_command();
-        gsmWaitForReply(true, SECS(2));
+        gsm_wait_for_reply(true);
         snprintf(modem_command, sizeof(modem_command),
             "AT+QMGDA=\"DEL SENT\"");
         gsm_send_command();
-        gsmWaitForReply(true, SECS(2));
+        gsm_wait_for_reply(true);
     }
 }
 
@@ -846,13 +846,13 @@ void sms_send_msg(
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGS=\"%s\"", pPhoneNumber);
     gsm_send_command();
-    gsmWaitForReply(false, GSM_MODEM_COMMAND_TIMEOUT);
+    gsm_wait_for_reply(false);
     char *tmp = strstr(modem_reply, ">");
     if (tmp != NULL) {
         gsm_port.print(pMsg);
         //sending ctrl+z
         gsm_port.print("\x1A");
-        gsmWaitForReply(true, GSM_MODEM_COMMAND_TIMEOUT);
+        gsm_wait_for_reply(1);
     }
 }
 

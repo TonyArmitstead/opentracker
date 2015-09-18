@@ -19,7 +19,7 @@ int parse_receive_reply(
         snprintf(modem_command, sizeof(modem_command),
             "AT+QIRD=0,1,0,100");
         gsm_send_command();
-        gsmWaitForReply(true, GSM_MODEM_COMMAND_TIMEOUT);
+        gsm_wait_for_reply(true);
         // check if no more data
         tmp = strstr(modem_reply, "ERROR");
         if (tmp != NULL) {

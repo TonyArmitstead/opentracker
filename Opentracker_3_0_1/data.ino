@@ -23,9 +23,7 @@ bool formServerUpdateMessage(
     	rStat = false;
     } else {
         char timeStr[22];
-        if (!gsmGetTime(timeStr, DIM(timeStr), SECS(5))) {
-            strncopy(timeStr, BAD_TIME, DIM(timeStr));
-        }
+        gsmGetTime(timeStr, DIM(timeStr));
 		pos = calc_snprintf_return_pointer(
 			pos, msgSize - (pos-pMsg),
 			snprintf(pos, msgSize - (pos-pMsg),
