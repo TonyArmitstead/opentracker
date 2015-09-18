@@ -34,29 +34,30 @@
 /**
  * Offset into flash where we store the un-reported location data
  */
-#define STORAGE_GPSDATA_OFFSET     1024
+#define STORAGE_SERVER_DATA_OFFSET     1024
 /**
  * Total length of GPS data area
  */
-#define STORAGE_GPSDATA_SIZE       (64*1024)
+#define STORAGE_SERVER_DATA_SIZE       (64*1024)
 /**
  * STORED_SETTINGS_T.marker value
  */
 #define SETTINGS_VALID 0xAA557700
 /**
- * STORED_GPSDATA_T.marker values
+ * STORED_SERVER_DATA_T.marker values
  */
-#define STORED_GPSDATA_START 0x11111111
-#define STORED_GPSDATA_VALID 0xAA557700
-#define STORED_GPSDATA_EMPTY 0xFFFFFFFF
+#define STORED_SERVER_DATA_START 0x11111111
+#define STORED_SERVER_DATA_VALID 0xAA557700
+#define STORED_SERVER_DATA_EMPTY 0xFFFFFFFF
 /**
  * The max number of GPS records we can fit into the storage area
  */
-#define DIM_STORED_GPSDATA (STORAGE_GPSDATA_SIZE/sizeof(STORED_GPSDATA_INDEX_T))
+#define STORED_SERVER_DATA_START \
+    (STORAGE_SERVER_DATA_SIZE/sizeof(STORED_SERVER_DATA_INDEX_T))
 /**
  * The index data we use to track usage of the GPS storage area
  */
-STORED_GPSDATA_INDEX_T gpsDataIndex;
+STORED_SERVER_DATA_INDEX_T serverDataIndex;
 
 /**
  * Calculates the 32 bit CRC of a memory block
@@ -140,58 +141,58 @@ bool storageLoadSettings(
  * Gets a pointer to the start of the GPS flash storage area
  * @return a pointer to the start of the GPS flash storage area
  */
-STORED_GPSDATA_T* storageGetGPSFirst() {
+STORED_SERVER_DATA_T* storageGetServerFirst() {
     return
-        (STORED_GPSDATA_T*)dueFlashStorage.readAddress(STORAGE_GPSDATA_OFFSET);
+        (STORED_SERVER_DATA_T*)dueFlashStorage.readAddress(STORAGE_SERVER_DATA_OFFSET);
 }
 
 /**
  * Gets a pointer to the last record in the GPS flash storage area
  * @return a pointer to the last record of the GPS flash storage area
  */
-STORED_GPSDATA_T* storageGetGPSLast() {
-    return storageGetGPSFirst() + DIM_STORED_GPSDATA - 1;
+STORED_SERVER_DATA_T* storageGetServerLast() {
+    return storageGetServerFirst() + STORED_SERVER_DATA_START - 1;
 }
 
 /**
  * Given a pointer to a record in the flash storage area, we return a pointer
  * to the one after, taking in to account any buffer wrap
- * @param pGPSData a pointer to a record in the flash storage area
- * @return a pointer to the record which follows pGPSData, taking in to account
+ * @param pServerData a pointer to a record in the flash storage area
+ * @return a pointer to the record which follows pServerData, taking in to account
  *         any buffer wrap
  */
-STORED_GPSDATA_T* storageGetGPSNext(
-    STORED_GPSDATA_T* pGPSData
+STORED_SERVER_DATA_T* storageGetServerNext(
+    STORED_SERVER_DATA_T* pServerData
 ) {
-    if (pGPSData >= storageGetGPSLast())
-        return storageGetGPSFirst();
-    return pGPSData + 1;
+    if (pServerData >= storageGetServerLast())
+        return storageGetServerFirst();
+    return pServerData + 1;
 }
 
 /**
  * Given a pointer to a record in the flash storage area, we return a pointer
  * to the one before, taking in to account any buffer wrap
- * @param pGPSData a pointer to a record in the flash storage area
- * @return a pointer to the record which precedes pGPSData, taking in to account
+ * @param pServerData a pointer to a record in the flash storage area
+ * @return a pointer to the record which precedes pServerData, taking in to account
  *         any buffer wrap
  */
-STORED_GPSDATA_T* storageGetGPSPrev(
-    STORED_GPSDATA_T* pGPSData
+STORED_SERVER_DATA_T* storageGetServerPrev(
+    STORED_SERVER_DATA_T* pServerData
 ) {
-    if (pGPSData <= storageGetGPSFirst())
-        return storageGetGPSLast();
-    return pGPSData - 1;
+    if (pServerData <= storageGetServerFirst())
+        return storageGetServerLast();
+    return pServerData - 1;
 }
 
 /**
  * Checks the flash store is valid and assigns the flash index data
  * @param pIndexData assigned the flash index data
  */
-void storageGPSScan(
-    STORED_GPSDATA_INDEX_T* pIndexData
+void storageServerScan(
+    STORED_SERVER_DATA_INDEX_T* pIndexData
 ) {
-    STORED_GPSDATA_T* pGPSFirst = storageGetGPSFirst();
-    STORED_GPSDATA_T* pGPSData = pGPSFirst;
+    STORED_SERVER_DATA_T* pServerFirst = storageGetServerFirst();
+    STORED_SERVER_DATA_T* pServerData = pServerFirst;
     pIndexData->count = 0;
     pIndexData->storeValid = true;
     pIndexData->pOldest = NULL;
@@ -199,12 +200,12 @@ void storageGPSScan(
     // Locate the _single_ oldest record and checks for presence
     // of duff marker values (indicating corrupt store)
     while (!scanComplete) {
-        switch (pGPSData->marker) {
-        case STORED_GPSDATA_START:
+        switch (pServerData->marker) {
+        case STORED_SERVER_DATA_START:
             // Have located the oldest record
             if (pIndexData->pOldest == NULL) {
                 // Record 1st oldest marker record
-                pIndexData->pOldest = pGPSData;
+                pIndexData->pOldest = pServerData;
                 pIndexData->count += 1;
             } else {
                 // There can be only one
@@ -212,10 +213,10 @@ void storageGPSScan(
                 scanComplete = true;
             }
             break;
-        case STORED_GPSDATA_VALID:
+        case STORED_SERVER_DATA_VALID:
             pIndexData->count += 1;
             break;
-        case STORED_GPSDATA_EMPTY:
+        case STORED_SERVER_DATA_EMPTY:
             break;
         default:
             // Invalid marker = duff flash (or maybe we have changed the record
@@ -224,8 +225,8 @@ void storageGPSScan(
             scanComplete = true;
             break;
         }
-        pGPSData = storageGetGPSNext(pGPSData);
-        if (pGPSData == pGPSFirst) {
+        pServerData = storageGetServerNext(pServerData);
+        if (pServerData == pServerFirst) {
             scanComplete = true;
         }
     }
@@ -236,29 +237,29 @@ void storageGPSScan(
             if (pIndexData->count > 0) {
                 pIndexData->storeValid = false;
             } else {
-                pIndexData->pOldest = storageGetGPSFirst();
+                pIndexData->pOldest = storageGetServerFirst();
             }
         } else {
             // Did find a start (oldest) record, so check we got a consecutive
             // sequence of valid records following it. This checks we see
             // something like EEEESVVVEEEE and not EEEESVVVEVEE.
-            pGPSFirst = pIndexData->pOldest;
-            pGPSData = pGPSFirst;
+            pServerFirst = pIndexData->pOldest;
+            pServerData = pServerFirst;
             size_t validCount = 0;
             scanComplete = false;
             while (!scanComplete) {
-                switch (pGPSData->marker) {
-                case STORED_GPSDATA_START:
-                case STORED_GPSDATA_VALID:
+                switch (pServerData->marker) {
+                case STORED_SERVER_DATA_START:
+                case STORED_SERVER_DATA_VALID:
                     validCount += 1;
                     break;
-                case STORED_GPSDATA_EMPTY:
+                case STORED_SERVER_DATA_EMPTY:
                 default:
                     scanComplete = true;
                     break;
                 }
-                pGPSData = storageGetGPSNext(pGPSData);
-                if (pGPSData == pGPSFirst) {
+                pServerData = storageGetServerNext(pServerData);
+                if (pServerData == pServerFirst) {
                     scanComplete = true;
                 }
             }
@@ -271,22 +272,22 @@ void storageGPSScan(
 
 /**
  * Erases the GPS data store. This effectively marks the store full of
- * STORED_GPSDATA_EMPTY markers.
+ * STORED_SERVER_DATA_EMPTY markers.
  * @return true if the store wiped OK, false if not
  */
-bool storageWipeGPSData() {
+bool storageWipeServerData() {
     bool wipeOK = true;
     byte wipeData[256];
     memset(wipeData, 0xFF, sizeof(wipeData));
 
-    size_t wipeLeft = STORAGE_GPSDATA_SIZE;
+    size_t wipeLeft = STORAGE_SERVER_DATA_SIZE;
     size_t wipeOffset = 0;
     while (wipeOK && (wipeLeft > 0)) {
         size_t wipeSize = MIN(sizeof(wipeData), wipeLeft);
         if (!dueFlashStorage.write(
-                STORAGE_GPSDATA_OFFSET + wipeOffset,
+                STORAGE_SERVER_DATA_OFFSET + wipeOffset,
                 wipeData, wipeSize)) {
-            debug_println(F("storageWipeGPSData: failed to wipe flash"));
+            debug_println(F("storageWipeServerData: failed to wipe flash"));
             wipeOK = false;
         } else {
             wipeLeft -= wipeSize;
@@ -298,23 +299,23 @@ bool storageWipeGPSData() {
 
 /**
  * Writes a GPS record to flash
- * @param pGPSDataLocation the address within the flash area to write
- * @param pGPSData the GPS record to write
+ * @param pServerDataLocation the address within the flash area to write
+ * @param pServerData the GPS record to write
  * @return true if written OK, false if not
  */
-bool storageWriteGPSDataToFlash(
-    const STORED_GPSDATA_T* pGPSDataLocation,
+bool storageWriteServerDataToFlash(
+    const STORED_SERVER_DATA_T* pServerDataLocation,
     unsigned long marker,
-    const GPSDATA_T* pGPSData
+    const SERVER_DATA_T* pServerData
 ) {
-    STORED_GPSDATA_T storedGPSData;
-    storedGPSData.marker = marker;
-    storedGPSData.gpsData = *pGPSData;
-    size_t byteOffset = sizeof(STORED_GPSDATA_T) * (pGPSDataLocation -
-                                                    storageGetGPSFirst());
+    STORED_SERVER_DATA_T storedServerData;
+    storedServerData.marker = marker;
+    storedServerData.ServerData = *pServerData;
+    size_t byteOffset = sizeof(STORED_SERVER_DATA_T) * (pServerDataLocation -
+                                                    storageGetServerFirst());
     return dueFlashStorage.write(
-        STORAGE_GPSDATA_OFFSET + byteOffset,
-        (byte*)pGPSData, sizeof(STORED_GPSDATA_T));
+        STORAGE_SERVER_DATA_OFFSET + byteOffset,
+        (byte*)pServerData, sizeof(STORED_SERVER_DATA_T));
 }
 
 /**
@@ -322,80 +323,92 @@ bool storageWriteGPSDataToFlash(
  * flash content is valid. If flash is not valid we erase it all and
  * prepare it for use.
  */
-void storageGPSDataInit() {
-    storageGPSScan(&gpsDataIndex);
-    if (!gpsDataIndex.storeValid) {
-        debug_println(F("storageGPSDataInit: wiping flash"));
-        gpsDataIndex.count = 0;
-        gpsDataIndex.pOldest = storageGetGPSFirst();
-        gpsDataIndex.storeValid = storageWipeGPSData(); 
+void storageServerDataInit() {
+    storageServerScan(&serverDataIndex);
+    if (!serverDataIndex.storeValid) {
+        debug_println(F("storageServerDataInit: wiping flash"));
+        serverDataIndex.count = 0;
+        serverDataIndex.pOldest = storageGetServerFirst();
+        serverDataIndex.storeValid = storageWipeServerData();
     } else {
-        debug_print(F("storageGPSDataInit: flash is OK and holding "));
-        debug_print(gpsDataIndex.count);
+        debug_print(F("storageServerDataInit: flash is OK and holding "));
+        debug_print(serverDataIndex.count);
         debug_println(F(" records"));
     }
 }
 
 /**
  * Writes a GPS data block to flash storage.
- * @param pGPSData the GPS data to write
+ * @param pServerData the GPS data to write
  * @return true if stored OK, false if not
  */
-bool storageWriteGPSData(
-    const GPSDATA_T* pGPSData
+bool storageWriteServerData(
+    const SERVER_DATA_T* pServerData
 ) {
     bool writtenOK = false;
-    if (gpsDataIndex.storeValid) {
-        if (gpsDataIndex.count == 0) {
+    if (serverDataIndex.storeValid) {
+        if (serverDataIndex.count == 0) {
             // Store is empty so use first slot
-            STORED_GPSDATA_T* pStoredGPSData = storageGetGPSFirst();
-            writtenOK = storageWriteGPSDataToFlash(
-                            pStoredGPSData, STORED_GPSDATA_START, pGPSData);
-            gpsDataIndex.count = 1;
-            gpsDataIndex.pOldest = pStoredGPSData;
-        } else if (gpsDataIndex.count == DIM_STORED_GPSDATA) {
+            STORED_SERVER_DATA_T* pStoredServerData = storageGetServerFirst();
+            writtenOK = storageWriteServerDataToFlash(
+                            pStoredServerData, STORED_SERVER_DATA_START,
+                            pServerData, ignState, engineRuntime);
+            serverDataIndex.count = 1;
+            serverDataIndex.pOldest = pStoredServerData;
+        } else if (serverDataIndex.count == STORED_SERVER_DATA_START) {
             // Store is full so overwrite oldest slot
-            STORED_GPSDATA_T* pStoredGPSData = gpsDataIndex.pOldest;
-            writtenOK = storageWriteGPSDataToFlash(
-                            pStoredGPSData, STORED_GPSDATA_VALID, pGPSData);
+            STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
+            writtenOK = storageWriteServerDataToFlash(
+                            pStoredServerData, STORED_SERVER_DATA_VALID,
+                            pServerData, ignState, engineRuntime);
             // Mark the following slot as the oldest
-            pStoredGPSData = storageGetGPSNext(pStoredGPSData);
-            writtenOK = writtenOK && storageWriteGPSDataToFlash(
-                           pStoredGPSData, STORED_GPSDATA_START,
-                           &pStoredGPSData->gpsData);
-            gpsDataIndex.pOldest = pStoredGPSData;
+            pStoredServerData = storageGetServerNext(pStoredServerData);
+            writtenOK = writtenOK && storageWriteServerDataToFlash(
+                           pStoredServerData, STORED_SERVER_DATA_START,
+                           &pStoredServerData->ServerData,
+                           pStoredServerData->ignState,
+                           pStoredServerData->engineRuntime);
+            serverDataIndex.pOldest = pStoredServerData;
         } else {
             // Locate next free slot as oldest+count
-            STORED_GPSDATA_T* pStoredGPSData = gpsDataIndex.pOldest;
-            for (size_t idx=0; idx < gpsDataIndex.count; ++idx) {
-                pStoredGPSData = storageGetGPSNext(pStoredGPSData);
+            STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
+            for (size_t idx=0; idx < serverDataIndex.count; ++idx) {
+                pStoredServerData = storageGetServerNext(pStoredServerData);
             }
-            writtenOK = storageWriteGPSDataToFlash(
-                            pStoredGPSData, STORED_GPSDATA_VALID, pGPSData);
-            gpsDataIndex.count += 1;
+            writtenOK = storageWriteServerDataToFlash(
+                            pStoredServerData, STORED_SERVER_DATA_VALID,
+                            pServerData, ignState, engineRuntime);
+            serverDataIndex.count += 1;
         }
         if (!writtenOK) {
-            debug_println(F("storageSaveGPSData: failed to update flash"));
-            gpsDataIndex.storeValid = false;
-            debug_println(F("storageSaveGPSData: marked flash as invalid"));
+            debug_println(F("storageSaveServerData: failed to update flash"));
+            serverDataIndex.storeValid = false;
+            debug_println(F("storageSaveServerData: marked flash as invalid"));
         }
     }
     return writtenOK;
 }
 
+size_t storageGetStoredServerDataCount() {
+    if (serverDataIndex.storeValid) {
+        return serverDataIndex.count;
+    }
+    return 0;
+}
+
 /**
  * Returns the oldest GPS data record from flash
- * @param pGPSData where to write the GPS data
- * @return true if pGPSData assigned ok, false if there is no data to return
+ * @param pServerData where to write the GPS data
+ * @return true if pServerData assigned ok, false if there is no data to return
  */
-bool storageReadOldestGPSData(
-    GPSDATA_T* pGPSData
+bool storageReadOldestServerData(
+    SERVER_DATA_T* pServerData
 ) {
-    if (!gpsDataIndex.storeValid)
+    if (!serverDataIndex.storeValid)
         return false;
-    if (gpsDataIndex.count == 0)
+    if (serverDataIndex.count == 0)
         return false;
-    *pGPSData = gpsDataIndex.pOldest->gpsData;
+    *pServerData = serverDataIndex.pOldest->ServerData;
     return true;
 }
 
@@ -404,24 +417,24 @@ bool storageReadOldestGPSData(
  * @return true if removed OK, false if no GPS data in flash or we failed
  *         to update the flash
  */
-bool storageForgetOldestGPSData() {
-    if (!gpsDataIndex.storeValid)
+bool storageForgetOldestServerData() {
+    if (!serverDataIndex.storeValid)
         return false;
-    if (gpsDataIndex.count == 0)
+    if (serverDataIndex.count == 0)
         return false;
     // Mark the oldest slot as empty
-    STORED_GPSDATA_T* pStoredGPSData = gpsDataIndex.pOldest;
-    bool writtenOK = storageWriteGPSDataToFlash(
-                    pStoredGPSData, STORED_GPSDATA_EMPTY,
-                    &pStoredGPSData->gpsData);
-    gpsDataIndex.count -= 1;
-    if (gpsDataIndex.count > 0) {
+    STORED_SERVER_DATA_T* pStoredData = serverDataIndex.pOldest;
+    bool writtenOK = storageWriteServerDataToFlash(
+                    pStoredData, STORED_SERVER_DATA_EMPTY,
+                    &pStoredData->serverData);
+    serverDataIndex.count -= 1;
+    if (serverDataIndex.count > 0) {
         // Mark the following slot as the oldest
-        pStoredGPSData = storageGetGPSNext(pStoredGPSData);
-        writtenOK = writtenOK && storageWriteGPSDataToFlash(
-                       pStoredGPSData, STORED_GPSDATA_START,
-                       &pStoredGPSData->gpsData);
-        gpsDataIndex.pOldest = pStoredGPSData;
+        pStoredData = storageGetServerNext(pStoredData);
+        writtenOK = writtenOK && storageWriteServerDataToFlash(
+                       pStoredData, STORED_SERVER_DATA_START,
+                       &pStoredData->serverData);
+        serverDataIndex.pOldest = pStoredServerData;
     }
     return writtenOK;
 }
@@ -435,71 +448,71 @@ bool storageForgetOldestGPSData() {
  *
  *   0   1   2   3
  * +---+---+---+---+
- * | E | E | E | E | gpsDataIndex.count=0, gpsDataIndex.oldestIdx=x
+ * | E | E | E | E | serverDataIndex.count=0, serverDataIndex.oldestIdx=x
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | S | E | E | E | gpsDataIndex.count=1, gpsDataIndex.oldestIdx=0
+ * | S | E | E | E | serverDataIndex.count=1, serverDataIndex.oldestIdx=0
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | S | E | E | gpsDataIndex.count=1, gpsDataIndex.oldestIdx=1
+ * | E | S | E | E | serverDataIndex.count=1, serverDataIndex.oldestIdx=1
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | E | S | E | gpsDataIndex.count=1, gpsDataIndex.oldestIdx=2
+ * | E | E | S | E | serverDataIndex.count=1, serverDataIndex.oldestIdx=2
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | E | E | S | gpsDataIndex.count=1, gpsDataIndex.oldestIdx=3
+ * | E | E | E | S | serverDataIndex.count=1, serverDataIndex.oldestIdx=3
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | S | V | E | E | gpsDataIndex.count=2, gpsDataIndex.oldestIdx=0
+ * | S | V | E | E | serverDataIndex.count=2, serverDataIndex.oldestIdx=0
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | S | V | E | gpsDataIndex.count=2, gpsDataIndex.oldestIdx=1
+ * | E | S | V | E | serverDataIndex.count=2, serverDataIndex.oldestIdx=1
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | E | S | V | gpsDataIndex.count=2, gpsDataIndex.oldestIdx=2
+ * | E | E | S | V | serverDataIndex.count=2, serverDataIndex.oldestIdx=2
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | E | E | S | gpsDataIndex.count=2, gpsDataIndex.oldestIdx=3
+ * | V | E | E | S | serverDataIndex.count=2, serverDataIndex.oldestIdx=3
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | S | V | V | E | gpsDataIndex.count=3, gpsDataIndex.oldestIdx=0
+ * | S | V | V | E | serverDataIndex.count=3, serverDataIndex.oldestIdx=0
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | E | S | V | V | gpsDataIndex.count=3, gpsDataIndex.oldestIdx=1
+ * | E | S | V | V | serverDataIndex.count=3, serverDataIndex.oldestIdx=1
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | E | S | V | gpsDataIndex.count=3, gpsDataIndex.oldestIdx=2
+ * | V | E | S | V | serverDataIndex.count=3, serverDataIndex.oldestIdx=2
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | V | E | S | gpsDataIndex.count=3, gpsDataIndex.oldestIdx=3
+ * | V | V | E | S | serverDataIndex.count=3, serverDataIndex.oldestIdx=3
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | S | V | V | V | gpsDataIndex.count=4, gpsDataIndex.oldestIdx=0
+ * | S | V | V | V | serverDataIndex.count=4, serverDataIndex.oldestIdx=0
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | S | V | V | gpsDataIndex.count=4, gpsDataIndex.oldestIdx=1
+ * | V | S | V | V | serverDataIndex.count=4, serverDataIndex.oldestIdx=1
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | V | S | V | gpsDataIndex.count=4, gpsDataIndex.oldestIdx=2
+ * | V | V | S | V | serverDataIndex.count=4, serverDataIndex.oldestIdx=2
  * +---+---+---+---+
  *
  * +---+---+---+---+
- * | V | V | V | S | gpsDataIndex.count=4, gpsDataIndex.oldestIdx=3
+ * | V | V | V | S | serverDataIndex.count=4, serverDataIndex.oldestIdx=3
  * +---+---+---+---+
  */
 

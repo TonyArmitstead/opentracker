@@ -37,7 +37,7 @@ SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
 GPSDATA_T lastReportedGPSData;
 GPSDATA_T gpsData;
-char serverData[DATA_LIMIT];
+char serverMsg[DATA_LIMIT];
 unsigned long lastServerUpdateTime;
 unsigned long serverUpdatePeriod;
 char modem_command[256];  // Modem AT command buffer
@@ -156,8 +156,8 @@ void setup() {
     gsmSetupPIO();
     // turn on GSM
     powerUpGSMModem();
-    // Initialise GPS flash storage
-    storageGPSDataInit();
+    // Initialise server data flash storage
+    storageServerDataInit();
     //setup ignition detection
     pinMode(PIN_S_DETECT, INPUT);
     lastServerUpdateTime = millis();
@@ -188,12 +188,7 @@ unsigned long timeDiff(unsigned long end_time, unsigned long start_time) {
     return end_time + (ULONG_MAX - start_time) + 1;
 }
 
-void loop() {
-    //start counting time
-    unsigned long timeStart = millis();
-    GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
-    status_led();
-    // Check if ignition is turned on
+void ignitionCheck() {
     ignState = (digitalRead(PIN_S_DETECT) == 0);
     if (ignState) {
         // Insert here only code that should be processed when Ignition is ON
@@ -213,9 +208,9 @@ void loop() {
             engineRunning = false;
         }
     }
-    // Process any SMS configuration requests
-    sms_check();
-    // Collect GPS data
+}
+
+void gpsCheck() {
     if (!readGPSData(&gpsData, 2000)) {
         debug_println(F("Failed to read GPS data"));
     } else {
@@ -238,58 +233,161 @@ void loop() {
                 }
             }
         }
-        // Is it time to update the server?
-        unsigned long timeSinceLastServerUpdate = 
-            timeDiff(timeStart, lastServerUpdateTime);
-        if (timeSinceLastServerUpdate
-            < 1000 * serverUpdatePeriod) {
-            debug_print(F("Seconds to next server update = "));
-            debug_print((1000 * serverUpdatePeriod - timeSinceLastServerUpdate)/1000);
-            debug_print(F(", Network Status = "));
-            debug_println(gsmGetNetworkStatusString(networkStatus));
-        } else {
-            debug_println(F("Is time to update server"));
-            if (!formServerUpdateMessage(
-                &gpsData, serverData, sizeof(serverData),
-                ignState, engineRunningTime)) {
-                debug_println(F("Failed to form server update message"));
+    }
+}
+
+bool sendMessageToServer(
+    SERVER_DATA_T serverData
+) {
+    bool sentStatus = false;
+    if (formServerUpdateMessage(
+            &serverData, serverMsg, sizeof(serverMsg))) {
+        sentStatus = gsm_send_data(serverMsg);
+    }
+    return sentStatus;
+}
+
+
+GSMSTATUS_T sendStoredMessagedToServer(
+    GSMSTATUS_T networkStatus
+) {
+    unsigned storedMessagesDelivered = 0;
+    SERVER_DATA_T serverData;
+    unsigned long timeNow = millis();
+    // Spend up to 2 mins sending any old GPS data we stored whilst
+    // there was no GSM connection
+    while ((networkStatus == CONNECTED) &&
+            storageReadOldestServerData(&serverData) &&
+            (timeDiff(millis(), timeNow) < 120*ONE_SEC)) {
+        if (sendMessageToServer(&serverData)) {
+            if (storageForgetOldestServerData()) {
+                storedMessagesDelivered += 1;
+            }
+        }
+        networkStatus = gsmGetNetworkStatus();
+    }
+    if (storedMessagesDelivered > 0) {
+        debug_print(F("Sent "));
+        debug_print(storedMessagesDelivered);
+        debug_println(F(" stored messages to server"));
+    }
+    return networkStatus;
+}
+
+bool updateServerWithCurrentData(
+    SERVER_DATA_T serverData
+) {
+    bool serverUpdatedStatus = false;
+    if (!sendMessageToServer(&serverData)) {
+        debug_println(F("Failed to send server update message"));
+        if (gsmFailedToUpdateTime == 0) {
+            gsmFailedToUpdateTime = timeStart;
+        } else if (timeDiff(timeNow, gsmFailedToUpdateTime) > ONE_SEC*60*10) {
+            debug_println(F("Scheduling gsm restart"));
+            gsmFailedToUpdateTime = 0;
+            gsmRestart = true;
+        }
+    } else {
+        gsmFailedToUpdateTime = 0;
+        serverUpdatedStatus = true;
+    }
+    return serverUpdatedStatus;
+}
+
+void serverUpdateCheck() {
+    GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
+    // If we have network connection and have stored messages then send
+    // them (or at least some of them) now
+    if ((networkStatus == CONNECTED) &&
+         (storageGetStoredServerDataCount() > 0) {
+        networkStatus = sendStoredMessagesToServer(networkStatus);
+    }
+    // Is it time to update the server with current data?
+    unsigned long timeNow = millis();
+    unsigned long timeSinceLastServerUpdate =
+        timeDiff(timeNow, lastServerUpdateTime);
+    if (timeSinceLastServerUpdate < 1000 * serverUpdatePeriod) {
+        // No, not time to update server
+        debug_print(F("Seconds to next server update = "));
+        debug_print((1000 * serverUpdatePeriod - timeSinceLastServerUpdate)/1000);
+        debug_print(F(", Network Status = "));
+        debug_println(gsmGetNetworkStatusString(networkStatus));
+    } else {
+        // Yes, we are due a server update
+        debug_println(F("It is time to update server"));
+        bool shouldReportData = true;
+        if (lastGoodGPSData.fixAge == TinyGPS::GPS_INVALID_AGE) {
+            debug_println(F("But dont have current GPS data"));
+            shouldReportData = false;
+        } else if (lastReportedGPSData == lastGoodGPSData) {
+            debug_println(F("But GPS data has not changed since last update"));
+            shouldReportData = false;
+        }
+        if (shouldReportData) {
+            SERVER_DATA_T serverData;
+            serverData.gpsData = lastGoodGPSData;
+            serverData.ignState = ignState;
+            serverData.engineRunningTime = engineRunningTime;
+            bool serverUpdatedOK = false;
+            if (networkStatus == CONNECTED) {
+                serverUpdatedOK = updateServerWithCurrentData(serverData);
+            }
+            if (serverUpdatedOK) {
+                debug_println(F("Server updated OK"));
             } else {
-                if (!gsm_send_data(serverData)) {
-                    debug_println(F("Failed to send server update message"));
-                    if (gsmFailedToUpdateTime == 0) {
-                        gsmFailedToUpdateTime = timeStart;
-                    } else if (timeDiff(timeStart, gsmFailedToUpdateTime)
-                               > 1000*60*10) {
-                        debug_println(F("Scheduling gsm restart"));
-                        gsmFailedToUpdateTime = 0;
-                        gsmRestart = true;
-                    }
+                debug_println(F("Server update failed so storing to flash"));
+                if (storageWriteServerData(serverData)) {
+                    serverUpdatedOK = true;
                 } else {
-                    debug_println(F("Server updated OK"));
-                    gsmFailedToUpdateTime = 0;
-                    lastServerUpdateTime = timeStart;
-                    lastReportedGPSData = gpsData;
+                    debug_println(F("Store to flash failed"));
                 }
+            }
+            if (serverUpdatedOK) {
+                // Note we record the data as reported even if we only stored it
+                // to flash, it will eventually get reported and this assignment
+                // prevents us repeatedly writing to the flash (or server)
+                lastReportedGPSData = lastGoodGPSData;
+                lastServerUpdateTime = timeNow;
             }
         }
     }
-    // Check if sending SMS location updates
+}
+
+void smsNotificationCheck(
+    GSMSTATUS_T networkStatus
+) {
+    unsigned long timeNow = millis();
+    if (timeDiff(timeNow, lastSMSSendTime)
+        > 1000 * config.sms_send_interval) {
+        if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
+            debug_println(F("Was time to send SMS location but "
+                            "no location data available"));
+        } else {
+            debug_println(F("Sending SMS location data"));
+            char msg[MAX_SMS_MSG_LEN + 1];
+            sms_form_sms_update_str(msg, DIM(msg), &lastGoodGPSData,
+                ignState);
+            sms_send_msg(msg, config.sms_send_number);
+            lastSMSSendTime = timeNow;
+        }
+    }
+}
+
+void loop() {
+    GSMSTATUS_T networkStatus = gsmGetNetworkStatus();
+    status_led();
+    // Ignition status update
+    ignitionCheck();
+    // Process any SMS configuration requests
+    smsRequestCheck();
+    // Collect GPS data
+    gpsCheck();
+    // Server update
+    serverUpdateCheck(networkStatus);
+    // SMS notification update
     if ((strlen(config.sms_send_number) != 0) &&
         (config.sms_send_interval != 0)) {
-        if (timeDiff(timeStart, lastSMSSendTime)
-            > 1000 * config.sms_send_interval) {
-            if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
-                debug_println(F("Was time to send SMS location but "
-                                "no location data available"));
-            } else {
-                debug_println(F("Sending SMS location data"));
-                char msg[MAX_SMS_MSG_LEN + 1];
-                sms_form_sms_update_str(msg, DIM(msg), &lastGoodGPSData,
-                    ignState);
-                sms_send_msg(msg, config.sms_send_number);
-                lastSMSSendTime = timeStart;
-            }
-        }
+        smsNotificationCheck(networkStatus);
     }
     if (saveConfig) {
         debug_println(F("Saving config to flash"));

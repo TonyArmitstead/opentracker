@@ -678,7 +678,7 @@ void sms_srvsend_handler(
  *  e.g.
  *    AT+CMGL="REC UNREAD"\r\r\n+CMGL: 1,"REC UNREAD","+44xxxxxxxxxx","","2015/07/28 16:34:03+04"\r\n#xxxx,locate\r\n\r\nOK\r\n
  */
-void sms_check() {
+void smsRequestCheck() {
     // Issue command to modem to read all unread messages
     snprintf(modem_command, sizeof(modem_command),
         "AT+CMGL=\"REC UNREAD\"");
