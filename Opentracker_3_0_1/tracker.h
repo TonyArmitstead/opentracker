@@ -142,10 +142,6 @@ unsigned long led_interval = 1000; // interval at which to blink status led (mil
 #define HTTP_PORT "80"
 #define URL "/index.php"
 
-#define DEFAULT_APN ""  //default APN
-#define DEFAULT_USER ""  //default APN user
-#define DEFAULT_PASS ""  //default APN pass
-
 const char HTTP_HEADER1[] =
     "POST /index.php  HTTP/1.0\r\nHost: updates.geolink.io\r\nContent-type: application/x-www-form-urlencoded\r\nContent-length:"; //HTTP header line before length
 const char HTTP_HEADER2[] =
