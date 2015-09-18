@@ -3,10 +3,14 @@
 #define CR '\r'
 #define LF '\n'
 #define MAX_PHONE_NUMBER_LEN 16  // Max number of digits in a phone number
-
-unsigned long led_interval = 1000; // interval at which to blink status led (milliseconds)
+#define IMEI_LEN 15 // 14 digits + 1 check digit
+#define LED_INTERVAL 1000 // interval at which to blink status led (milliseconds)
 // millis() count for one second
 #define ONE_SEC 1000
+#define SECS(n) ((n)*ONE_SEC)
+#define MINS(n) ((n)*60*ONE_SEC)
+const char* BAD_IMEI = "?IMEI?";
+const char* BAD_TIME = "?TIME?";
 //default settings (can be overwritten and stored in EEPRom)
 #define FAST_SERVER_INTERVAL 30      // how often, in s, to update the server
                                      // data when we are moving
@@ -14,14 +18,10 @@ unsigned long led_interval = 1000; // interval at which to blink status led (mil
                                      // data when we are stopped
 #define SMS_SEND_INTERVAL (24*60*60) // how often, in s, to send a location
                                      // SMS message
-#define SMS_SEND_NUMBER ""           // The phone number to send the location
-                                     // SMS message
-#define KEY ""   //key for connection, will be sent with every data transmission
 #define DATA_LIMIT 2500     //current data limit, data collected before sending to remote server can not exceed this
 // SMS related definitions
 #define MAX_SMS_MSG_LEN 144
 #define MAX_SMS_KEY_LEN 12  // SMS key cant be longer than this
-#define SMS_KEY "pass"      // default key for SMS command auth
 // Macro to help with forming SMS_SEND bit data values
 #define SMS_SEND(name, val) \
     ((SMS_SEND_##name##_##val & SMS_SEND_##name##_MASK) << SMS_SEND_##name##_POS)
@@ -62,8 +62,6 @@ unsigned long led_interval = 1000; // interval at which to blink status led (mil
 
 #define GSM_MODEM_COMMAND_TIMEOUT 20
 #define GSM_SEND_FAILURES_REBOOT 0  // 0 == disabled, increase to set the number of GSM failures that will trigger a reboot of the opentracker device
-
-#define ENGINE_RUNNING_LOG_FAST_AS_POSSIBLE 0 // when the engine is running, log position as fast as possible
 
 #define SEND_RAW 0 // enable to use the new raw tcp send method to minimise data use
 #define SEND_RAW_INCLUDE_KEY 1
@@ -194,3 +192,12 @@ typedef struct SETTINGS_S {
     unsigned long sms_send_flags; // Bit set of what data to send in SMS message
 } SETTINGS_T;
 
+/**
+ * Values for the GSM status
+ */
+typedef enum GSMSTATUS_E {
+    CONNECTED = 0,      // Normal operational state
+    NO_CELL = 1,        // Not connected to a cell
+    LIMITED = 2,        // Only a limited sevice available
+    NOT_READY = 255     // Not ready to retrieve network status
+} GSMSTATUS_T;

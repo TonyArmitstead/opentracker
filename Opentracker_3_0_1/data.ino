@@ -1,29 +1,28 @@
 /**
  * Form server update message
- * @param pGPSData points to the GPS data record
+ * @param pServer points to data set to send to the server
  * @param pMsg where to store the server update message
  * @param msgSize the size of the storage available for pMsg
- * @param ignState ignition state, true for ON
  * @return true if message formed OK, false if message not formed OK due to
  *         either something wrong with the GPS data or the message is not
  *         big enough to old the configured data set
  */
 bool formServerUpdateMessage(
-    GPSDATA_T* pGPSData,
+    SERVER_DATA_T* pServerData,
     char* pMsg,
-    size_t msgSize,
-	bool ignState,
-	unsigned long engineRuntime
+    size_t msgSize
 ) {
     bool rStat = true;
     char* pos = pMsg;
 
-    if (pGPSData->fixAge == TinyGPS::GPS_INVALID_AGE) {
-        debug_println(F("formServerUpdateMessage() pGPSData has invalid age"));
+    if (pServerData->gpsData.fixAge == TinyGPS::GPS_INVALID_AGE) {
+        debug_println(F("formServerUpdateMessage() GPS data has invalid age"));
     	rStat = false;
     } else {
         char timeStr[22];
-        gsmGetTime(timeStr, DIM(timeStr));
+        if (!gsmGetTime(timeStr, DIM(timeStr), SECS(5))) {
+            strncopy(timeStr, BAD_TIME, DIM(timeStr));
+        }
 		pos = calc_snprintf_return_pointer(
 			pos, msgSize - (pos-pMsg),
 			snprintf(pos, msgSize - (pos-pMsg),
@@ -35,7 +34,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%lu", pos == dataStart ? "" : ",", pGPSData->date)
+						 "%s%lu", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.date)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_GPSTIME_POS)
@@ -43,7 +43,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%lu", pos == dataStart ? "" : ",", pGPSData->time)
+						 "%s%lu", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.time)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_LATITUDE_POS)
@@ -51,7 +52,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%1.6f", pos == dataStart ? "" : ",", pGPSData->lat)
+						 "%s%1.6f", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.lat)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_LONGITUDE_POS)
@@ -59,7 +61,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%1.6f", pos == dataStart ? "" : ",", pGPSData->lon)
+						 "%s%1.6f", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.lon)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_SPEED_POS)
@@ -67,7 +70,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%1.6f", pos == dataStart ? "" : ",", pGPSData->speed)
+						 "%s%1.6f", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.speed)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_ALTITUDE_POS)
@@ -75,7 +79,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%1.6f", pos == dataStart ? "" : ",", pGPSData->alt)
+						 "%s%1.6f", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.alt)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_HEADING_POS)
@@ -83,7 +88,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%1.6f", pos == dataStart ? "" : ",", pGPSData->course)
+						 "%s%1.6f", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.course)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_HDOP_POS)
@@ -91,7 +97,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%lu", pos == dataStart ? "" : ",", pGPSData->hdop)
+						 "%s%lu", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.hdop)
 			);
 		}
 		if ((config.server_send_flags >> SERVER_SEND_NSAT_POS)
@@ -99,7 +106,8 @@ bool formServerUpdateMessage(
 			pos = calc_snprintf_return_pointer(
 				pos, msgSize - (pos-pMsg),
 				snprintf(pos, msgSize - (pos-pMsg),
-						 "%s%lu", pos == dataStart ? "" : ",", pGPSData->nsats)
+						 "%s%lu", pos == dataStart ? "" : ",",
+						 pServerData->gpsData.nsats)
 			);
 		}
 		pos = calc_snprintf_return_pointer(
@@ -124,7 +132,8 @@ bool formServerUpdateMessage(
 	        pos = calc_snprintf_return_pointer(
 	            pos, msgSize - (pos-pMsg),
 	            snprintf(pos, msgSize - (pos-pMsg),
-	                     "%%s", pos == dataStart ? "" : ",", ignState ? "ON" : "OFF")
+	                     "%%s", pos == dataStart ? "" : ",",
+	                     pServerData->ignState ? "ON" : "OFF")
 	        );
 	    }
 	    if ((config.server_send_flags >> SERVER_SEND_RUNTIME_POS)
@@ -132,7 +141,8 @@ bool formServerUpdateMessage(
 	        pos = calc_snprintf_return_pointer(
 	            pos, msgSize - (pos-pMsg),
 	            snprintf(pos, msgSize - (pos-pMsg),
-	                     "%%ul", pos == dataStart ? "" : ",", engineRuntime)
+	                     "%%ul", pos == dataStart ? "" : ",",
+	                         pServerData->engineRuntime)
 	        );
 	    }
     }

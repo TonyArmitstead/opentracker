@@ -52,7 +52,7 @@
 /**
  * The max number of GPS records we can fit into the storage area
  */
-#define STORED_SERVER_DATA_START \
+#define STORED_SERVER_DATA_MAX \
     (STORAGE_SERVER_DATA_SIZE/sizeof(STORED_SERVER_DATA_INDEX_T))
 /**
  * The index data we use to track usage of the GPS storage area
@@ -151,7 +151,7 @@ STORED_SERVER_DATA_T* storageGetServerFirst() {
  * @return a pointer to the last record of the GPS flash storage area
  */
 STORED_SERVER_DATA_T* storageGetServerLast() {
-    return storageGetServerFirst() + STORED_SERVER_DATA_START - 1;
+    return storageGetServerFirst() + STORED_SERVER_DATA_MAX - 1;
 }
 
 /**
@@ -310,7 +310,7 @@ bool storageWriteServerDataToFlash(
 ) {
     STORED_SERVER_DATA_T storedServerData;
     storedServerData.marker = marker;
-    storedServerData.ServerData = *pServerData;
+    storedServerData.serverData = *pServerData;
     size_t byteOffset = sizeof(STORED_SERVER_DATA_T) * (pServerDataLocation -
                                                     storageGetServerFirst());
     return dueFlashStorage.write(
@@ -352,7 +352,7 @@ bool storageWriteServerData(
             STORED_SERVER_DATA_T* pStoredServerData = storageGetServerFirst();
             writtenOK = storageWriteServerDataToFlash(
                             pStoredServerData, STORED_SERVER_DATA_START,
-                            pServerData, ignState, engineRuntime);
+                            pServerData);
             serverDataIndex.count = 1;
             serverDataIndex.pOldest = pStoredServerData;
         } else if (serverDataIndex.count == STORED_SERVER_DATA_START) {
@@ -360,14 +360,12 @@ bool storageWriteServerData(
             STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
             writtenOK = storageWriteServerDataToFlash(
                             pStoredServerData, STORED_SERVER_DATA_VALID,
-                            pServerData, ignState, engineRuntime);
+                            pServerData);
             // Mark the following slot as the oldest
             pStoredServerData = storageGetServerNext(pStoredServerData);
             writtenOK = writtenOK && storageWriteServerDataToFlash(
                            pStoredServerData, STORED_SERVER_DATA_START,
-                           &pStoredServerData->ServerData,
-                           pStoredServerData->ignState,
-                           pStoredServerData->engineRuntime);
+                           &pStoredServerData->serverData);
             serverDataIndex.pOldest = pStoredServerData;
         } else {
             // Locate next free slot as oldest+count
@@ -377,7 +375,7 @@ bool storageWriteServerData(
             }
             writtenOK = storageWriteServerDataToFlash(
                             pStoredServerData, STORED_SERVER_DATA_VALID,
-                            pServerData, ignState, engineRuntime);
+                            pServerData);
             serverDataIndex.count += 1;
         }
         if (!writtenOK) {
@@ -408,7 +406,7 @@ bool storageReadOldestServerData(
         return false;
     if (serverDataIndex.count == 0)
         return false;
-    *pServerData = serverDataIndex.pOldest->ServerData;
+    *pServerData = serverDataIndex.pOldest->serverData;
     return true;
 }
 
@@ -434,7 +432,7 @@ bool storageForgetOldestServerData() {
         writtenOK = writtenOK && storageWriteServerDataToFlash(
                        pStoredData, STORED_SERVER_DATA_START,
                        &pStoredData->serverData);
-        serverDataIndex.pOldest = pStoredServerData;
+        serverDataIndex.pOldest = pStoredData;
     }
     return writtenOK;
 }

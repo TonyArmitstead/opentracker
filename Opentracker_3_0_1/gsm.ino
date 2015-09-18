@@ -222,26 +222,29 @@ void gsm_set_pin() {
  */
 bool gsmGetTime(
     char* pStr,
-    size_t strSize
+    size_t strSize,
+    unsigned timeout
 ) {
     bool validTime = false;
-    int i;
-    *pStr = '\0';
-    snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    char *tStart = strstr(modem_reply, "+QLTS: \"");
-    if (tStart != NULL) {
-        unsigned year, month, day, hour, mi, sec;
-        char tz1, tz2, tz3;
-        if (sscanf(tStart+8, "%u/%u/%u,%u:%u:%u%c%c%c", 
-                   &year, &month, &day, &hour, &mi, &sec, 
-                   &tz1, &tz2, &tz3) == 9) {
-            unsigned tz = (10*(tz2-'0') + (tz3-'0'))/4;
-            snprintf(pStr, strSize, "%02u/%02u/%02u,%02u:%02u:%02u%c%02u",
-                year, month, day, hour, mi, sec, tz1, tz
-            );
-            validTime = true;
+    unsigned long tStart = millis();
+    while (!validTime && (timeDiff(millis(), tStart) < timeout)) {
+        *pStr = '\0';
+        snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
+        gsm_send_command();
+        gsm_wait_for_reply(true);
+        char *tStart = strstr(modem_reply, "+QLTS: \"");
+        if (tStart != NULL) {
+            unsigned year, month, day, hour, mi, sec;
+            char tz1, tz2, tz3;
+            if (sscanf(tStart+8, "%u/%u/%u,%u:%u:%u%c%c%c",
+                       &year, &month, &day, &hour, &mi, &sec,
+                       &tz1, &tz2, &tz3) == 9) {
+                unsigned tz = (10*(tz2-'0') + (tz3-'0'))/4;
+                snprintf(pStr, strSize, "%02u/%02u/%02u,%02u:%02u:%02u%c%02u",
+                    year, month, day, hour, mi, sec, tz1, tz
+                );
+                validTime = true;
+            }
         }
     }
     return validTime;
@@ -293,7 +296,6 @@ bool checkValidIMEI(
         unsigned sum = (*pDigit--) - '0';
         for (bool doDouble = true; pDigit >= pIMEI; doDouble = !doDouble) {
             unsigned d = (*pDigit--) - '0';
-            debug_print(d);
             sum += doDouble ? ((2*d) / 10) + ((2*d) % 10) : d;
         }
         isValid = ((sum % 10) == 0);
@@ -311,12 +313,14 @@ bool checkValidIMEI(
  */
 bool gsmGetIMEI(
     char* pStr,
-    size_t strSize
+    size_t strSize,
+    unsigned long timeout
 ) {
     bool validIMEI = false;
     // For unknown reasons we can sometimes read a duff IMEI number from the
     // modem, so we try a number of times to get a good IMEI number
-    for (int tryCount=0; !validIMEI && (tryCount < 10); ++tryCount) {
+    unsigned long tStart = millis();
+    while (!validIMEI && (timeDiff(millis(), tStart) < timeout)) {
         // Get modem's IMEI number
         snprintf(modem_command, sizeof(modem_command), "AT+GSN");
         gsm_send_command();
@@ -359,7 +363,7 @@ void gsmConfigure() {
     // supply PIN code is needed
     gsm_set_pin();
     // get GSM IMEI
-    if (!gsmGetIMEI(config.imei, DIM(config.imei))) {
+    if (!gsmGetIMEI(config.imei, DIM(config.imei), SECS(5))) {
         debug_print(F("gsmConfigure() read bad IMEI: "));
         debug_println(config.imei);
         // Replace bad IMEI with a string which when sent to the server
