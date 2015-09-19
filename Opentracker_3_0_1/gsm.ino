@@ -344,6 +344,10 @@ bool gsmGetIMEI(
                     size_t len = pDst-pStr; // NOTE no +1 since pDst -> '\0'
                     if (len == IMEI_LEN) {
                         validIMEI = checkValidIMEI(pStr, len);
+                        if (!validIMEI) {
+                            debug_print(F("gsmGetIMEI(): Failed check : "));
+                            debug_println(pStr);
+                        }
                     }
                     allDone = true;
                 } else {
@@ -368,7 +372,10 @@ void gsmConfigure() {
         debug_println(config.imei);
         // Replace bad IMEI with a string which when sent to the server
         // should not match a real IMEI
-        //strncopy(config.imei, BAD_IMEI, DIM(config.imei));
+        strncopy(config.imei, BAD_IMEI, DIM(config.imei));
+    } else {
+        debug_print(F("gsmConfigure() read IMEI: "));
+        debug_println(config.imei);
     }
     // misc GSM startup commands (disable echo)
     gsm_startup_cmd();

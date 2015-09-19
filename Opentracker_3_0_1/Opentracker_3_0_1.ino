@@ -76,10 +76,12 @@ void sendBootMessage() {
     if (strlen(config.sms_send_number) != 0) {
         char timeStr[22];
         if (!gsmGetTime(timeStr, DIM(timeStr), SECS(5))) {
+            debug_println(F("sendBootMessage(): Could not read modem time"));
             strncopy(timeStr, BAD_TIME, DIM(timeStr));
         }
         char imeiStr[IMEI_LEN+1];
         if (!gsmGetIMEI(imeiStr, DIM(imeiStr), SECS(5))) {
+            debug_println(F("sendBootMessage(): Could not read modem IMEI"));
             strncopy(imeiStr, BAD_IMEI, DIM(imeiStr));
         }
         char bootMsg[80];
@@ -147,6 +149,7 @@ void setup() {
     gsm_port.begin(115200);
     debug_port.begin(9600);
     gps_port.begin(9600);
+    debug_println(F("setup(): Initialising system"));
     //setup led pin
     pinMode(PIN_POWER_LED, OUTPUT);
     digitalWrite(PIN_POWER_LED, LOW);
@@ -168,10 +171,11 @@ void setup() {
     pinMode(PIN_S_DETECT, INPUT);
     lastServerUpdateTime = millis();
     serverUpdatePeriod = config.fast_server_interval;
-    sendBootMessage();
     lastGoodGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
     gpsData.fixAge = TinyGPS::GPS_INVALID_AGE;
     lastReportedGPSData.fixAge = TinyGPS::GPS_INVALID_AGE;
+    sendBootMessage();
+    debug_println(F("setup(): System initialisation complete"));
 }
 
 /**

@@ -26,7 +26,7 @@
 /**
  * Size of total storage available for everything
  */
-#define STORAGE_SIZE (256*1024)
+#define STORAGE_SIZE (128*1024)
 /**
  *  Offset into flash where we store the configuration settings
  */
@@ -34,11 +34,11 @@
 /**
  * Offset into flash where we store the un-reported location data
  */
-#define STORAGE_SERVER_DATA_OFFSET     1024
+#define STORAGE_SERVER_DATA_OFFSET 1024
 /**
  * Total length of GPS data area
  */
-#define STORAGE_SERVER_DATA_SIZE       (64*1024)
+#define STORAGE_SERVER_DATA_SIZE (64*1024)
 /**
  * STORED_SETTINGS_T.marker value
  */
@@ -53,7 +53,7 @@
  * The max number of GPS records we can fit into the storage area
  */
 #define STORED_SERVER_DATA_MAX \
-    (STORAGE_SERVER_DATA_SIZE/sizeof(STORED_SERVER_DATA_INDEX_T))
+    (STORAGE_SERVER_DATA_SIZE/sizeof(STORED_SERVER_DATA_T))
 /**
  * The index data we use to track usage of the GPS storage area
  */
@@ -92,20 +92,30 @@ bool storageSaveSettings(
     const SETTINGS_T* pSettings
 ) {
     bool rStat = false;
+    // Form record to save to flash - including a CRC
     STORED_SETTINGS_T savedSettings;
     savedSettings.marker = SETTINGS_VALID;
     savedSettings.settingsSize = sizeof(SETTINGS_T);
     memcpy(&savedSettings.settings, pSettings, sizeof(SETTINGS_T));
     savedSettings.crc32 = calcCRC32(&savedSettings.settings,
                                     sizeof(SETTINGS_T));
+    // Write it to flash
     if (!dueFlashStorage.write(
             STORAGE_SETTINGS_OFFSET,
             (byte*)&savedSettings,
             (uint32_t)sizeof(savedSettings))) {
         debug_println(F("storageSaveSettings: failed to save settings to flash"));
-        rStat = false;
     } else {
-        rStat = true;
+        // Verify flash now matches saved record
+        const SETTINGS_T* pSavedSettings =
+            (const SETTINGS_T*)dueFlashStorage.readAddress(
+                STORAGE_SETTINGS_OFFSET);
+        if (memcmp(&savedSettings, pSavedSettings, sizeof(SETTINGS_T)) != 0) {
+            debug_println(F("storageSaveSettings: failed to verify settings in flash"));
+        } else {
+            // All is good
+            rStat = true;
+        }
     }
     return rStat;
 }
@@ -143,7 +153,8 @@ bool storageLoadSettings(
  */
 STORED_SERVER_DATA_T* storageGetServerFirst() {
     return
-        (STORED_SERVER_DATA_T*)dueFlashStorage.readAddress(STORAGE_SERVER_DATA_OFFSET);
+        (STORED_SERVER_DATA_T*)dueFlashStorage.readAddress(
+            STORAGE_SERVER_DATA_OFFSET);
 }
 
 /**
@@ -158,8 +169,8 @@ STORED_SERVER_DATA_T* storageGetServerLast() {
  * Given a pointer to a record in the flash storage area, we return a pointer
  * to the one after, taking in to account any buffer wrap
  * @param pServerData a pointer to a record in the flash storage area
- * @return a pointer to the record which follows pServerData, taking in to account
- *         any buffer wrap
+ * @return a pointer to the record which follows pServerData, taking in to
+ *         account any buffer wrap
  */
 STORED_SERVER_DATA_T* storageGetServerNext(
     STORED_SERVER_DATA_T* pServerData
@@ -173,8 +184,8 @@ STORED_SERVER_DATA_T* storageGetServerNext(
  * Given a pointer to a record in the flash storage area, we return a pointer
  * to the one before, taking in to account any buffer wrap
  * @param pServerData a pointer to a record in the flash storage area
- * @return a pointer to the record which precedes pServerData, taking in to account
- *         any buffer wrap
+ * @return a pointer to the record which precedes pServerData, taking in to
+ *         account any buffer wrap
  */
 STORED_SERVER_DATA_T* storageGetServerPrev(
     STORED_SERVER_DATA_T* pServerData
@@ -204,10 +215,12 @@ void storageServerScan(
         case STORED_SERVER_DATA_START:
             // Have located the oldest record
             if (pIndexData->pOldest == NULL) {
+                debug_println(F("storageServerScan: located oldest record"));
                 // Record 1st oldest marker record
                 pIndexData->pOldest = pServerData;
                 pIndexData->count += 1;
             } else {
+                debug_println(F("storageServerScan: found multiple oldest records!"));
                 // There can be only one
                 pIndexData->storeValid = false;
                 scanComplete = true;
@@ -219,6 +232,8 @@ void storageServerScan(
         case STORED_SERVER_DATA_EMPTY:
             break;
         default:
+            debug_print(F("storageServerScan: found corrupt store at index: "));
+            debug_println(pServerData - pServerFirst);
             // Invalid marker = duff flash (or maybe we have changed the record
             // format)
             pIndexData->storeValid = false;

@@ -3,6 +3,7 @@ void settings_load() {
     debug_println(F("settings_load() started"));
     //load all settings from EEPROM
     if (!storageLoadSettings(&config)) {
+        debug_println(F("settings_load() using default configuration values"));
         config.slow_server_interval = SLOW_SERVER_INTERVAL;
         config.fast_server_interval = FAST_SERVER_INTERVAL;
         strlcpy(config.key, SERVER_KEY, sizeof(config.key));
@@ -14,6 +15,7 @@ void settings_load() {
         strlcpy(config.sms_send_number, SMS_SEND_NUMBER, sizeof(config.sms_send_number));
         config.sms_send_flags = SMS_SEND_DEFAULT;
         config.server_send_flags = SERVER_SEND_DEFAULT;
+        storageSaveSettings(&config);
     }
     debug_println(F("settings_load() finished"));
 }
