@@ -245,15 +245,50 @@ void gpsCheck() {
     }
 }
 
-bool sendMessageToServer(
-    SERVER_DATA_T* pServerData
+/**
+ * Sends one or more server data blocks to the server
+ * @param pServerData points ot the first data block
+ * @param count number of data blocks to send
+ */
+bool sendDataToServer(
+    SERVER_DATA_T* pServerData,
+    size_t count
 ) {
-    bool sentStatus = false;
-    if (formServerUpdateMessage(
-            pServerData, serverMsg, sizeof(serverMsg))) {
-        sentStatus = gsm_send_data(serverMsg);
+    bool allSentOK = true;
+    const char* pMessages[10];
+    while (count) {
+        // Generate as many messages as will fit into serverMsg[]
+        // or pMessages[]
+        char* pMsgPos = serverMsg;
+        size_t msgIdx = 0;
+        while (count && (msgIdx < DIM(pMessages))) {
+            size_t lenLeft = sizeof(serverMsg)-(pMsgPos-serverMsg);
+            if (!formServerUpdateMessage(pServerData, pMsgPos, lenLeft)) {
+                // Run out of buffer space, so send what we have so far
+                break;
+            } else {
+                // Save message to message list
+                pMessages[msgIdx++] = pMsgPos;
+                pMsgPos += strlen(pMsgPos) + 1;
+                ++pServerData;
+                count -= 1;
+            }
+        }
+        if (msgIdx == 0) {
+            // We had server data to send but failed to construct any
+            // message data. There must be something wrong with the server
+            // data set, so skip to the next one
+            ++pServerData;
+            count -= 1;
+            allSentOK = false;
+        } else {
+            // Send as many messages as we generated
+            if (!gsmSendServerMessages(pMessages, msgIdx)) {
+                allSentOK = false;
+            }
+        }
     }
-    return sentStatus;
+    return allSentOK;
 }
 
 
@@ -261,15 +296,17 @@ GSMSTATUS_T sendStoredMessagesToServer(
     GSMSTATUS_T networkStatus
 ) {
     unsigned storedMessagesDelivered = 0;
-    SERVER_DATA_T serverData;
+    SERVER_DATA_T serverData[10];
     unsigned long timeNow = millis();
     // Spend up to 2 mins sending any old GPS data we stored whilst
     // there was no GSM connection
+    size_t count = 0;
     while ((networkStatus == CONNECTED) &&
-            storageReadOldestServerData(&serverData) &&
+            storageReadOldestServerDataBlock(
+                serverData, DIM(serverData), &count) &&
             (timeDiff(millis(), timeNow) < 120*ONE_SEC)) {
-        if (sendMessageToServer(&serverData)) {
-            if (storageForgetOldestServerData()) {
+        if (sendDataToServer(serverData, count)) {
+            if (storageForgetOldestServerData(count)) {
                 storedMessagesDelivered += 1;
             }
         }
@@ -287,7 +324,7 @@ bool updateServerWithCurrentData(
     SERVER_DATA_T* pServerData
 ) {
     bool serverUpdatedStatus = false;
-    if (!sendMessageToServer(pServerData)) {
+    if (!sendDataToServer(pServerData, 1)) {
         debug_println(F("Failed to send server update message"));
         unsigned long timeNow = millis();
         if (gsmFailedToUpdateTime == 0) {

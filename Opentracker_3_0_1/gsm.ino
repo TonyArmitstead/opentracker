@@ -3,7 +3,6 @@
  */
 void gsmSetupPIO() {
     //setup modem pins
-    debug_println(F("gsm_setup() started"));
     pinMode(PIN_C_PWR_GSM, OUTPUT);
     digitalWrite(PIN_C_PWR_GSM, LOW);
     pinMode(PIN_C_KILL_GSM, OUTPUT);
@@ -11,7 +10,6 @@ void gsmSetupPIO() {
     pinMode(PIN_STATUS_GSM, INPUT);
     pinMode(PIN_RING_GSM, INPUT);
     pinMode(PIN_WAKE_GSM, INPUT);
-    debug_println(F("gsm_setup() finished"));
 }
 
 /**
@@ -20,7 +18,6 @@ void gsmSetupPIO() {
  */
 bool gsmPowerOn() {
     bool isPoweredOn = false;
-    debug_println(F("gsmPowerOn() started"));
     if (digitalRead(PIN_STATUS_GSM) == LOW) { // i.e. is OFF
         // turn on the modem
         digitalWrite(PIN_C_PWR_GSM, HIGH);
@@ -29,7 +26,7 @@ bool gsmPowerOn() {
         unsigned long tStart = millis();
         while (timeDiff(millis(), tStart) < 2000) {
             if (digitalRead(PIN_STATUS_GSM) == HIGH) {
-                debug_println(F("gsmPowerOn() gsm modem powered on"));
+                debug_println(F("gsmPowerOn: GSM modem powered on"));
                 isPoweredOn = true;
                 break;
             }
@@ -40,10 +37,9 @@ bool gsmPowerOn() {
             delay(5000);
         }
     } else {
-        debug_println(F("gsmPowerOn() ERROR: gsm modem already on"));
+        debug_println(F("gsmPowerOn: GSM modem already on"));
         isPoweredOn = true;
     }
-    debug_println(F("gsmPowerOn() finished"));
     return isPoweredOn;
 }
 
@@ -51,7 +47,6 @@ bool gsmPowerOn() {
  * Powers off the gsm modem
  */
 void gsmPowerOff() {
-    debug_println(F("gsmPowerOff() started"));
     if (digitalRead(PIN_STATUS_GSM) == HIGH) { // i.e. is ON
         // turn off the modem
         digitalWrite(PIN_C_PWR_GSM, HIGH);
@@ -62,14 +57,13 @@ void gsmPowerOff() {
         // Should power down within 12s
         while (timeDiff(millis(), tStart) < 12000) {
             if (digitalRead(PIN_STATUS_GSM) == LOW) {
-                debug_println(F("gsmPowerOff() gsm modem powered down"));
+                debug_println(F("gsmPowerOff: GSM modem powered down"));
                 break;
             }
         }
     } else {
-        debug_println(F("gsmPowerOff() ERROR: gsm modem already off"));
+        debug_println(F("gsmPowerOff: GSM modem already off"));
     }
-    debug_println(F("gsmPowerOff() finished"));
 }
 
 void gsmIndicatePowerOn() {
@@ -85,6 +79,20 @@ void gsmIndicatePowerOn() {
 }
 
 /**
+ * Sends a command string to the modem
+ * @param pCommand the command to send (no trailing \n required)
+ * @return true if the command was accepted by the modem. Any response is
+ *         held in modem_reply[]
+ */
+bool gsmSendModemCommand(
+    const char* pCommand
+) {
+    snprintf(modem_command, sizeof(modem_command), pCommand);
+    gsmWriteCommand();
+    return gsmWaitForReply(true);
+}
+
+/**
  * Tries to synchronise the UART comms with the modem. We send AT commands
  * until the modem responds with OK.
  * @params timeout how long to wait for comms sync to be acheived
@@ -95,15 +103,12 @@ bool gsmSyncComms(
 ) {
     unsigned long tStart = millis();
     while (timeDiff(millis(), tStart) < timeout) {
-        snprintf(modem_command, sizeof(modem_command), "AT");
-        gsm_send_command();
-        if (gsm_wait_for_reply(true)) {
-            debug_println(F("gsmSyncComms() succeeded"));
-            debug_println(modem_reply);
+        if (gsmSendModemCommand("AT")) {
+            debug_println(F("gsmSyncComms: succeeded"));
             return true;
         }
     }
-    debug_println(F("gsmSyncComms() failed"));
+    debug_println(F("gsmSyncComms: failed"));
     return false;
 }
 
@@ -114,9 +119,7 @@ bool gsmSyncComms(
  */
 GSMSTATUS_T gsmGetNetworkStatus() {
     GSMSTATUS_T status = NOT_READY;
-    snprintf(modem_command, sizeof(modem_command), "AT+QNSTATUS");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
+    gsmSendModemCommand("AT+QNSTATUS");
     char *pos = strstr(modem_reply, "+QNSTATUS:");
     if (pos != NULL) {
         pos += 10;
@@ -151,64 +154,63 @@ const char* gsmGetNetworkStatusString(
     return status;
 }
 
-void gsm_send_command() {
+/**
+ * Writes modem_command[] to the modem UART. The ASCIZ string in modem_command
+ * does not need the '\r' as the last character.
+ */
+void gsmWriteCommand() {
     // Empty out any residual received data
     while (gsm_port.available()) {
         (void)gsm_port.read();
     }
     modem_reply[0] = '\0';
     if (modemLogging) {
-        debug_print(F("gsm_send_command(): "));
+        debug_print(F("gsmWriteCommand: "));
         debug_println(modem_command);
     }
     gsm_port.print(modem_command);
     gsm_port.print("\r");
 }
 
-void gsm_send_tcp_data() {
-    if (modemLogging) {
-        debug_print(F("gsm_send_tcp_data(): "));
-        debug_println(modem_data);
-    }
-    gsm_port.print(modem_data);
-}
-
-void gsm_set_pin() {
-    debug_println(F("gsm_set_pin() started"));
+/**
+ * Unlocks the modem by setting any configured modem PIN
+ * @return true if the pin is not required or is set OK
+ */
+bool gsmSetPin() {
+    bool rStat = true;
     //checking if PIN is set 
-    snprintf(modem_command, sizeof(modem_command), "AT+CPIN?");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
+    gsmSendModemCommand("AT+CPIN?");
     char *tmp = strstr(modem_reply, "SIM PIN");
     if (tmp != NULL) {
-        debug_println(F("gsm_set_pin(): PIN is required"));
+        debug_println(F("gsm_set_pin: PIN is required"));
         //checking if pin is valid one
         if (config.sim_pin[0] == -1) {
-            debug_println(F("gsm_set_pin(): PIN is not supplied."));
+            debug_println(F("gsm_set_pin: PIN is not supplied."));
         } else {
             if (strlen(config.sim_pin) == 4) {
                 debug_println(
-                    F("gsm_set_pin(): PIN supplied, sending to modem."));
+                    F("gsm_set_pin: PIN supplied, sending to modem."));
                 gsm_port.print("AT+CPIN=");
                 gsm_port.print(config.sim_pin);
                 gsm_port.print("\r");
-                gsm_wait_for_reply(true);
+                gsmWaitForReply(true);
                 tmp = strstr(modem_reply, "OK");
                 if (tmp != NULL) {
-                    debug_println(F("gsm_set_pin(): PIN is accepted"));
+                    debug_println(F("gsm_set_pin: PIN is accepted"));
                 } else {
-                    debug_println(F("gsm_set_pin(): PIN is not accepted"));
+                    debug_println(F("gsm_set_pin: PIN is not accepted"));
                 }
             } else {
                 debug_println(
                     F("gsm_set_pin(): PIN supplied, but has invalid length."
                       " Not sending to modem."));
+                rStat = false;
             }
         }
     } else {
-        debug_println(F("gsm_set_pin(): PIN is not required"));
+        debug_println(F("gsm_set_pin: PIN is not required"));
     }
-    debug_println(F("gsm_set_pin() completed"));
+    return rStat;
 }
 
 /**
@@ -217,7 +219,7 @@ void gsm_set_pin() {
  * @param strSize the storage size for pStr
  * @return true if we read a valid time, false if not
  * 
- * gsm_send_command(): AT+QLTS
+ * gsmWriteCommand(): AT+QLTS
  * Modem Reply: 'AT+QLTS\r\r\n+QLTS: "15/08/09,15:01:49+04,1"\r\n\r\nOK\r\n'
  */
 bool gsmGetTime(
@@ -229,9 +231,7 @@ bool gsmGetTime(
     unsigned long tStart = millis();
     while (!validTime && (timeDiff(millis(), tStart) < timeout)) {
         *pStr = '\0';
-        snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
-        gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmSendModemCommand("AT+QLTS");
         char *tStart = strstr(modem_reply, "+QLTS: \"");
         if (tStart != NULL) {
             unsigned year, month, day, hour, mi, sec;
@@ -250,35 +250,6 @@ bool gsmGetTime(
     return validTime;
 }
 
-void gsm_startup_cmd() {
-    debug_println(F("gsm_startup_cmd() started"));
-    //disable echo for TCP data
-    snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    //set receiving TCP data by command
-    snprintf(modem_command, sizeof(modem_command), "AT+QINDI=1");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    //set SMS as text format
-    snprintf(modem_command, sizeof(modem_command), "AT+CMGF=1");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    // Request network time sync
-    snprintf(modem_command, sizeof(modem_command), "AT+QNITZ=1");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    // Request local time saved to RTC time
-    snprintf(modem_command, sizeof(modem_command), "AT+CTZU=3");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    // Report network time
-    snprintf(modem_command, sizeof(modem_command), "AT+QLTS");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    debug_println(F("gsm_startup_cmd() completed"));
-}
-
 /**
  * Checks that a string of digits makes up a valid IMEI number
  * @param pIMEI points to the string of digits
@@ -286,7 +257,7 @@ void gsm_startup_cmd() {
  * @returns true if digitd check out, false if not
  * @note see http://imei-number.com/check-digit-calculation
  */
-bool checkValidIMEI(
+bool gsmCheckValidIMEI(
     const char* pIMEI,
     size_t lenIMEI
 ) {
@@ -322,9 +293,7 @@ bool gsmGetIMEI(
     unsigned long tStart = millis();
     while (!validIMEI && (timeDiff(millis(), tStart) < timeout)) {
         // Get modem's IMEI number
-        snprintf(modem_command, sizeof(modem_command), "AT+GSN");
-        gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmSendModemCommand("AT+GSN");
         // Should get a reply like: 'AT+GSN\r\r\n8x3x7x0x6x0x6x5\r\n\r\nOK\r\n'
         char* pSrc = strstr(modem_reply, "AT+GSN\r\r\n");
         if (pSrc != NULL) {
@@ -343,9 +312,9 @@ bool gsmGetIMEI(
                     *pDst = '\0';
                     size_t len = pDst-pStr; // NOTE no +1 since pDst -> '\0'
                     if (len == IMEI_LEN) {
-                        validIMEI = checkValidIMEI(pStr, len);
+                        validIMEI = gsmCheckValidIMEI(pStr, len);
                         if (!validIMEI) {
-                            debug_print(F("gsmGetIMEI(): Failed check : "));
+                            debug_print(F("gsmGetIMEI: Failed check : "));
                             debug_println(pStr);
                         }
                     }
@@ -361,26 +330,57 @@ bool gsmGetIMEI(
 }
 
 /**
- * Configures the GSM modem
+ * Sets the model APN value and configures the DSN server to Google's server
+ * @return true if all configured OK
  */
-void gsmConfigure() {
+bool gsmSetAPN() {
+    bool rStat = true;
+    // set all APN data, dns, etc
+    snprintf(modem_command, sizeof(modem_command),
+        "AT+QIREGAPP=\"%s\",\"%s\",\"%s\"", config.apn, config.user,
+        config.pwd);
+    gsmWriteCommand();
+    rStat = rStat && gsmWaitForReply(true);
+    rStat = rStat && gsmSendModemCommand("AT+QIDNSCFG=\"8.8.8.8\"");
+    rStat = rStat && gsmSendModemCommand("AT+QIDNSIP=1");
+    return rStat;
+}
+
+/**
+ * Configures the GSM modem
+ * @return true if all configured OK
+ */
+bool gsmConfigure() {
+    bool rStat = true;
     // supply PIN code is needed
-    gsm_set_pin();
+    rStat = rStat && gsmSetPin();
     // get GSM IMEI
     if (!gsmGetIMEI(config.imei, DIM(config.imei), SECS(5))) {
-        debug_print(F("gsmConfigure() read bad IMEI: "));
+        debug_print(F("gsmConfigure: read bad IMEI: "));
         debug_println(config.imei);
         // Replace bad IMEI with a string which when sent to the server
         // should not match a real IMEI
         strncopy(config.imei, BAD_IMEI, DIM(config.imei));
+        rStat = false;
     } else {
-        debug_print(F("gsmConfigure() read IMEI: "));
+        debug_print(F("gsmConfigure: read IMEI: "));
         debug_println(config.imei);
     }
-    // misc GSM startup commands (disable echo)
-    gsm_startup_cmd();
+    //disable echo for TCP data
+    rStat = rStat && gsmSendModemCommand("AT+QISDE=0");
+    //set receiving TCP data by command
+    rStat = rStat && gsmSendModemCommand("AT+QINDI=1");
+    //set SMS as text format
+    rStat = rStat && gsmSendModemCommand("AT+CMGF=1");
+    // Request network time sync
+    rStat = rStat && gsmSendModemCommand("AT+QNITZ=1");
+    // Request local time saved to RTC time
+    rStat = rStat && gsmSendModemCommand("AT+CTZU=3");
+    // Report network time
+    rStat = rStat && gsmSendModemCommand("AT+QLTS");
     // set GSM APN
-    gsm_set_apn();
+    rStat = rStat && gsmSetAPN();
+    return rStat;
 }
 
 /**
@@ -403,48 +403,37 @@ bool gsmWaitForConnection(
     return (status == CONNECTED);
 }
 
-int gsm_disconnect(int waitForReply) {
-    int ret = 0;
-    debug_println(F("gsm_disconnect() started"));
+/**
+ * Disconnects the modem from any currently connected TCP host
+ * @param waitForReply true if you want us to correctly wait for a response
+ *        from the modem (you normally want this set to true)
+ * @return true if disconnected OK, false if not
+ */
+bool gsmDisconnect(
+    bool waitForReply
+) {
+    bool rStat = true;
     //disconnect GSM 
     snprintf(modem_command, sizeof(modem_command), "AT+QIDEACT");
-    gsm_send_command();
+    gsmWriteCommand();
     if (waitForReply) {
-        gsm_wait_for_reply(0);
+        gsmWaitForReply(false);
         //check if result contains DEACT OK
         char *tmp = strstr(modem_reply, "DEACT OK");
-        if (tmp != NULL) {
-            debug_println(F("gsm_disconnect(): DEACT OK found"));
-            ret = 1;
-        } else {
-            debug_println(F("gsm_disconnect(): DEACT OK not found."));
+        if (tmp == NULL) {
+            debug_println(F("gsmDisconnect: DEACT OK not found."));
+            rStat = false;
         }
     }
-    debug_println(F("gsm_disconnect() completed"));
-    return ret;
+    return rStat;
 }
 
-int gsm_set_apn() {
-    debug_println(F("gsm_set_apn() started"));
-    //set all APN data, dns, etc
-    snprintf(modem_command, sizeof(modem_command),
-        "AT+QIREGAPP=\"%s\",\"%s\",\"%s\"", config.apn, config.user,
-        config.pwd);
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    snprintf(modem_command, sizeof(modem_command), "AT+QIDNSCFG=\"8.8.8.8\"");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    snprintf(modem_command, sizeof(modem_command), "AT+QIDNSIP=1");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    debug_println(F("gsm_set_apn() completed"));
-    return 1;
-}
-
-int gsm_connect() {
-    int ret = 0;
-    debug_println(F("gsm_connect() started"));
+/**
+ * Connects the modem to a TCP host
+ * @return true if connected OK, false if not
+ */
+bool gsmConnect() {
+    bool rStat = false;
     //try to connect multiple times
     for (int i = 0; i < CONNECT_RETRY; i++) {
         debug_print(F("Connecting to remote server..."));
@@ -453,21 +442,28 @@ int gsm_connect() {
         //opening connection
         snprintf(modem_command, sizeof(modem_command),
             "AT+QIOPEN=\"%s\",\"%s\",\"%s\"", PROTO, HOSTNAME, HTTP_PORT);
-        gsm_send_command();
-        gsm_wait_for_reply(0);
+        gsmWriteCommand();
+        gsmWaitForReply(false);
         char *tmp = strstr(modem_reply, "CONNECT OK");
         if (tmp != NULL) {
             debug_print(F("Connected to remote server: "));
             debug_println(HOSTNAME);
-            ret = 1;
+            rStat = true;
             break;
         } else {
-            debug_print(F("Can not connect to remote server: "));
+            debug_print(F("Failed to connect to remote server: "));
             debug_println(HOSTNAME);
         }
     }
-    debug_println(F("gsm_connect() completed"));
-    return ret;
+    return rStat;
+}
+
+void gsm_send_tcp_data() {
+    if (modemLogging) {
+        debug_print(F("gsm_send_tcp_data: "));
+        debug_println(modem_data);
+    }
+    gsm_port.print(modem_data);
 }
 
 int gsm_validate_tcp() {
@@ -477,12 +473,9 @@ int gsm_validate_tcp() {
     char *tmp;
     char *tmpval;
 
-    debug_println(F("gsm_validate_tcp() started."));
     //todo check in the loop if everything delivered
     for (int k = 0; k < 10; k++) {
-        snprintf(modem_command, sizeof(modem_command), "AT+QISACK");
-        gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmSendModemCommand("AT+QISACK");
         //todo check if everything is delivered
         tmp = strstr(modem_reply, "+QISACK: ");
         tmp += strlen("+QISACK: ");
@@ -495,169 +488,81 @@ int gsm_validate_tcp() {
         nonacked = atoi(str);
         if (nonacked <= PACKET_SIZE_DELIVERY) {
             //all data has been delivered to the server , if not wait and check again            
-            debug_println(F("gsm_validate_tcp() data delivered."));
             ret = 1;
             break;
         } else {
-            debug_println(F("gsm_validate_tcp() data not yet delivered."));
+            debug_println(F("gsm_validate_tcp: data not yet delivered."));
         }
     }
-    debug_println(F("gsm_validate_tcp() completed."));
     return ret;
 }
 
-void gsm_send_http_current(const char* pServerMsg) {
-    //send HTTP request, after connection if fully opened
-    //this will send Current data
-    debug_print(F("gsm_send_http(): sending data: "));
+/**
+ * Sends one or more messages to the server
+ * @param pServerMessages points to an array of pointers to messages. Each
+ *        message is a '\0' terminated string
+ * @return true if all messages set ok, false if not
+ */
+bool gsmSendServerMessages(
+    const char** pServerMessages,
+    size_t count
+) {
+    bool allSentOK = true;
+    if (!gsmDisconnect(true)) {
+        debug_println(F("gsmSendServerMessages: Error deactivating GPRS"));
+    }
+    // Disable TCP data echo
+    gsmSendModemCommand("AT+QISDE=0");
+    // Only allow a single TCP session
+    gsmSendModemCommand("AT+QIMUX=0");
+    // opening connection
+    if (gsmConnect()) {
+        // connection opened, send all messages
+        while (count--) {
+            if (!gsmSendServerMessage(*pServerMessages)) {
+                allSentOK = false;
+            }
+            ++pServerMessages;
+        }
+        gsmDisconnect(true);
+    } else {
+        debug_println(F("Error, cannot send data, no connection"));
+        gsmDisconnect(true);
+        allSentOK = false;
+    }
+    return allSentOK;
+}
+
+/**
+ * Sends a single message to the server. Note that this call assumes we have
+ * already connected to the server
+ * @param pServerMsg points to an ASCIZ string containing the message to send
+ * @return true if message sent ok
+ */
+bool gsmSendServerMessage(
+    const char* pServerMsg
+) {
+    debug_print(F("gsmSendServerMessage: sending data: "));
     debug_println(pServerMsg);
-    //sending header                     
+    // sending HTTP header
     snprintf(modem_data, sizeof(modem_data), "%s%d%s", HTTP_HEADER1,
         13 + strlen(config.imei) + strlen(config.key) + strlen(pServerMsg),
         HTTP_HEADER2);
-    //sending header packet to remote host
     snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
-    gsm_send_command();
-    gsm_wait_for_reply(true);
+    gsmWriteCommand();
+    gsmWaitForReply(true);
     gsm_send_tcp_data();
     gsm_validate_tcp();
-    //sending imei and key first
+    // sending imei and key first
     snprintf(modem_data, sizeof(modem_data), "imei=%s&key=%s&d=%s", config.imei,
         config.key, pServerMsg);
     snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
         strlen(modem_data));
-    gsm_send_command();
-    gsm_wait_for_reply(true);
+    gsmWriteCommand();
+    gsmWaitForReply(true);
     gsm_send_tcp_data();
     gsm_validate_tcp();
-#if 0  
-    tmp_len = strlen(pServerMsg);
-    int chunk_len;
-    int chunk_pos = 0;
-    int chunk_check = 0;
-    if (tmp_len > PACKET_SIZE) {
-        chunk_len = PACKET_SIZE;
-    } else {
-        chunk_len = tmp_len;
-    }
-    int k = 0;
-    for (int i = 0; i < tmp_len; i++) {
-        if ((i == 0) || (chunk_pos >= PACKET_SIZE)) {
-            if (chunk_pos >= PACKET_SIZE) {
-                gsm_wait_for_reply(true);
-                //validate previous transmission  
-                gsm_validate_tcp();
-                //next chunk, get chunk length, check if not the last one                            
-                chunk_check = tmp_len - i;
-                if (chunk_check > PACKET_SIZE) {
-                    chunk_len = PACKET_SIZE;
-                } else {
-                    //last packet
-                    chunk_len = chunk_check;
-                }
-                chunk_pos = 0;
-            }
-            //sending chunk
-            snprintf(modem_command, sizeof(modem_command),
-                "AT+QISEND=%d",
-                chunk_len);
-            gsm_send_command();
-            gsm_wait_for_reply(true);
-        }
-        //sending data 
-        gsm_port.print(pServerMsg[i]);
-        chunk_pos++;
-        k++;
-    }
-#endif
-    debug_println(F("gsm_send_http(): data sent."));
-}
-
-void gsm_send_raw_current(const char* pServerMsg) {
-    //send raw TCP request, after connection if fully opened
-    //this will send Current data
-    debug_print(F("gsm_send_raw(): sending data: "));
-    debug_println(pServerMsg);
-
-    int tmp_len = strlen(pServerMsg);
-    int chunk_len;
-    int chunk_pos = 0;
-    int chunk_check = 0;
-
-    if (tmp_len > PACKET_SIZE) {
-        chunk_len = PACKET_SIZE;
-    } else {
-        chunk_len = tmp_len;
-    }
-    int k = 0;
-    for (int i = 0; i < tmp_len; i++) {
-        if ((i == 0) || (chunk_pos >= PACKET_SIZE)) {
-            if (chunk_pos >= PACKET_SIZE) {
-                gsm_wait_for_reply(true);
-                //validate previous transmission
-                gsm_validate_tcp();
-                //next chunk, get chunk length, check if not the last one
-                chunk_check = tmp_len - i;
-                if (chunk_check > PACKET_SIZE) {
-                    chunk_len = PACKET_SIZE;
-                } else {
-                    //last packet
-                    chunk_len = chunk_check;
-                }
-                chunk_pos = 0;
-            }
-            //sending chunk
-            snprintf(modem_command, sizeof(modem_command), "AT+QISEND=%d",
-                chunk_len);
-            gsm_send_command();
-            gsm_wait_for_reply(true);
-        }
-        //sending data
-        gsm_port.print(pServerMsg[i]);
-        chunk_pos++;
-        k++;
-    }
-    debug_println(F("gsm_send_raw(): data sent."));
-}
-
-int gsm_send_data(const char* pServerMsg) {
-    int ret_tmp = 0;
-
-    //disconnect GSM
-    ret_tmp = gsm_disconnect(1);
-    if (ret_tmp == 1) {
-        debug_println(F("GPRS deactivated."));
-    } else {
-        debug_println(F("Error deactivating GPRS."));
-    }
-    // Disable TCP data echo
-    snprintf(modem_command, sizeof(modem_command), "AT+QISDE=0");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    // Only allow a single TCP session
-    snprintf(modem_command, sizeof(modem_command), "AT+QIMUX=0");
-    gsm_send_command();
-    gsm_wait_for_reply(true);
-    //opening connection
-    ret_tmp = gsm_connect();
-    if (ret_tmp == 1) {
-        //connection opened, just send data 
-        if (SEND_RAW) {
-            gsm_send_raw_current(pServerMsg);
-        } else {
-            gsm_send_http_current(pServerMsg);  //send all current data
-        }
-        if (!SEND_RAW) {
-            //get reply and parse
-            ret_tmp = parse_receive_reply(10000);
-        }
-        gsm_disconnect(1);
-    } else {
-        debug_println(F("Error, can not send data, no connection."));
-        gsm_disconnect(1);
-    }
-    return ret_tmp;
 }
 
 void gsm_get_reply() {
@@ -676,7 +581,17 @@ void gsm_get_reply() {
     modem_reply[index] = '\0'; // Null terminate the string
 }
 
-bool gsm_wait_for_reply(bool allowOK) {
+/**
+ * Waits for the modem to respond to a command
+ * @param allowOK when true, indicates that a modem response of "OK" is enough
+ *        to indicate the end of the modem response. Some commands send an
+ *        "OK" response and then send some data, so for these you dont want
+ *        to pass this is as true.
+ * @return true if the modem response arrived within the timeout period
+ */
+bool gsmWaitForReply(
+    bool allowOK
+) {
     unsigned long timeout = millis();
     bool gotReply = false;
     modem_reply[0] = '\0';
@@ -845,48 +760,5 @@ bool gsm_is_final_result(bool allowOK) {
     default:
         return false;
     }
-}
-
-void gsm_debug() {
-    gsm_port.print("AT+QLOCKF=?");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+QBAND?");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+CGMR");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+CGMM");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+CGSN");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+CREG?");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+CSQ");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+QENG?");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+COPS?");
-    gsm_port.print("\r");
-    delay(2000);
-    gsm_get_reply();
-    gsm_port.print("AT+COPS=?");
-    gsm_port.print("\r");
-    delay(6000);
-    gsm_get_reply();
 }
 

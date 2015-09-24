@@ -16,10 +16,7 @@ int parse_receive_reply(
     cmd[0] = '\0';
     while (timeDiff(millis(), startTime) < timeout) {
         // Read upto 100 bytes of server return data
-        snprintf(modem_command, sizeof(modem_command),
-            "AT+QIRD=0,1,0,100");
-        gsm_send_command();
-        gsm_wait_for_reply(true);
+        gsmSendModemCommand("AT+QIRD=0,1,0,100");
         // check if no more data
         tmp = strstr(modem_reply, "ERROR");
         if (tmp != NULL) {

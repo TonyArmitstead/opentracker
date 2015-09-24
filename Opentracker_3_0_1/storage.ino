@@ -426,27 +426,60 @@ bool storageReadOldestServerData(
 }
 
 /**
- * Removes the oldest GPS data record from flash
- * @return true if removed OK, false if no GPS data in flash or we failed
- *         to update the flash
+ * Returns the oldest GPS data record from flash
+ * @param pServerData an array into which we write the server data
+ * @param dimServerData the size of the pServerData array
+ * @param pUsed assigned the number of array entries assigned
+ * @return true if pServerData assigned ok, false if there is no data to return
  */
-bool storageForgetOldestServerData() {
+bool storageReadOldestServerDataBlock(
+    SERVER_DATA_T* pServerData,
+    size_t dimServerData,
+    size_t* pUsed
+) {
     if (!serverDataIndex.storeValid)
         return false;
     if (serverDataIndex.count == 0)
         return false;
-    // Mark the oldest slot as empty
+    size_t usedEntries = 0;
     STORED_SERVER_DATA_T* pStoredData = serverDataIndex.pOldest;
-    bool writtenOK = storageWriteServerDataToFlash(
-                    pStoredData, STORED_SERVER_DATA_EMPTY,
-                    &pStoredData->serverData);
-    serverDataIndex.count -= 1;
-    if (serverDataIndex.count > 0) {
-        // Mark the following slot as the oldest
+    while (usedEntries < dimServerData) {
+        *pServerData++ = pStoredData->serverData;
         pStoredData = storageGetServerNext(pStoredData);
-        writtenOK = writtenOK && storageWriteServerDataToFlash(
-                       pStoredData, STORED_SERVER_DATA_START,
-                       &pStoredData->serverData);
+        ++usedEntries;
+    }
+    if (pUsed) {
+        *pUsed = usedEntries;
+    }
+    return true;
+}
+
+/**
+ * Removes the oldest server data record(s) from flash
+ * @param the number to server data entries to remove
+ * @return true if removed OK, false if no GPS data in flash or we failed
+ *         to update the flash
+ */
+bool storageForgetOldestServerData(
+    size_t count
+) {
+    bool writtenOK = false;
+    if (serverDataIndex.storeValid && (serverDataIndex.count == 0)) {
+        STORED_SERVER_DATA_T* pStoredData = serverDataIndex.pOldest;
+        while (count-- && serverDataIndex.count) {
+            // Mark this slot as empty
+            writtenOK = storageWriteServerDataToFlash(
+                            pStoredData, STORED_SERVER_DATA_EMPTY,
+                            &pStoredData->serverData);
+            pStoredData = storageGetServerNext(pStoredData);
+            serverDataIndex.count -= 1;
+        }
+        if (serverDataIndex.count > 0) {
+            // Mark the last slot as the 'new' oldest
+            writtenOK = writtenOK && storageWriteServerDataToFlash(
+                           pStoredData, STORED_SERVER_DATA_START,
+                           &pStoredData->serverData);
+        }
         serverDataIndex.pOldest = pStoredData;
     }
     return writtenOK;
