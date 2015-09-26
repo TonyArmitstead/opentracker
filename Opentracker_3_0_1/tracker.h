@@ -12,12 +12,13 @@
 const char* BAD_IMEI = "?IMEI?";
 const char* BAD_TIME = "?TIME?";
 //default settings (can be overwritten and stored in EEPRom)
-#define FAST_SERVER_INTERVAL 30      // how often, in s, to update the server
+#define FAST_SERVER_INTERVAL 30      // how often, in secs, to update the server
                                      // data when we are moving
-#define SLOW_SERVER_INTERVAL (10*60) // how often, in s, to update the server
+#define SLOW_SERVER_INTERVAL (10*60) // how often, in secs, to update the server
                                      // data when we are stopped
-#define SMS_SEND_INTERVAL (24*60*60) // how often, in s, to send a location
+#define SMS_SEND_INTERVAL (24*60)    // how often, in mins, to send a location
                                      // SMS message
+#define REBOOT_INTERVAL (7*24*60)    // auto reboot every week
 #define DATA_LIMIT 2500     //current data limit, data collected before sending to remote server can not exceed this
 // SMS related definitions
 #define MAX_SMS_MSG_LEN 144
@@ -187,9 +188,10 @@ typedef struct SETTINGS_S {
     char sms_key[MAX_SMS_KEY_LEN+1]; // password for SMS commands
     char imei[20];          // IMEI number
     unsigned long server_send_flags; // Bit set of what data to send to server
-    unsigned long sms_send_interval; // How often (in ms) to send SMS message containing location data
+    unsigned short sms_send_interval; // How often (in mins) to send SMS message containing location data
     char sms_send_number[MAX_PHONE_NUMBER_LEN+1];
     unsigned long sms_send_flags; // Bit set of what data to send in SMS message
+    unsigned short reboot_interval; // How often (in mins) to reboot the system
 } SETTINGS_T;
 
 /**

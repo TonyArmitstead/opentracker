@@ -23,7 +23,8 @@ SMS_CMD_HANDLER_T smsCommands[] = {
     { "smssend", sms_smssend_handler },
     { "srvsend", sms_srvsend_handler },
     { "gsmrestart", sms_gsmrestart_handler },
-    { "reboot", sms_reboot_handler }
+    { "reboot", sms_reboot_handler },
+    { "rebootfreq", sms_rebootfreq_handler }
 };
 /**
  * Max size of an SMS command string
@@ -344,20 +345,20 @@ void sms_smsnumber_handler(
 /**
  * Handles the SMS set SMS freq command
  * @param pPhoneNumber points to the text phone number we send any response to
- * @param pValue points to a string time value (in secs) which is the new
+ * @param pValue points to a string time value (in mins) which is the new
  *        SMS send update interval
  */
 void sms_smsfreq_handler(
     const char* pPhoneNumber,
     const char* pValue
 ) {
-    long updateSecs = atol(pValue);
-    if (updateSecs <= 0) {
-        sms_send_msg("Error: bad frequency", pPhoneNumber);
-    } else {
-        config.sms_send_interval = updateSecs;
+    long updateMins = atol(pValue);
+    if ((0 <= updateMins) && (updateMins <= 65535)) {
+        config.sms_send_interval = (unsigned short)updateMins;
         saveConfig = true;
         sms_send_msg("sms freq saved", pPhoneNumber);
+    } else {
+        sms_send_msg("Error: bad minutes value", pPhoneNumber);
     }
 }
 
@@ -385,6 +386,26 @@ void sms_reboot_handler(
 ) {
     powerReboot = true;
     sms_send_msg("Reboot request received", pPhoneNumber);
+}
+
+/**
+ * Handles the SMS set reboot freq command
+ * @param pPhoneNumber points to the text phone number we send any response to
+ * @param pValue points to a string time value (in mins) which is the new
+ *        auto reboot interval
+ */
+void sms_rebootfreq_handler(
+    const char* pPhoneNumber,
+    const char* pValue
+) {
+    long updateMins = atol(pValue);
+    if ((0 <= updateMins) && (updateMins <= 65535)) {
+        config.reboot_interval = (unsigned short)updateMins;
+        saveConfig = true;
+        sms_send_msg("reboot freq saved", pPhoneNumber);
+    } else {
+        sms_send_msg("Error: bad minutes value", pPhoneNumber);
+    }
 }
 
 /*

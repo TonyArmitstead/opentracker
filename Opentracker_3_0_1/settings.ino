@@ -15,6 +15,7 @@ void settings_load() {
         strlcpy(config.sms_send_number, SMS_SEND_NUMBER, sizeof(config.sms_send_number));
         config.sms_send_flags = SMS_SEND_DEFAULT;
         config.server_send_flags = SERVER_SEND_DEFAULT;
+        config.reboot_interval = REBOOT_INTERVAL;
         storageSaveSettings(&config);
     }
     debug_println(F("settings_load() finished"));

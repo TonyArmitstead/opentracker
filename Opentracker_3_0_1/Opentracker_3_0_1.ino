@@ -404,7 +404,7 @@ void serverUpdateCheck() {
 void smsNotificationCheck() {
     unsigned long timeNow = millis();
     if (timeDiff(timeNow, lastSMSSendTime)
-        > 1000 * config.sms_send_interval) {
+        > (60*1000) * config.sms_send_interval) {
         if (lastGoodGPSData.fixAge != TinyGPS::GPS_INVALID_AGE) {
             debug_println(F("Was time to send SMS location but "
                             "no location data available"));
@@ -435,6 +435,12 @@ void loop() {
         (config.sms_send_interval != 0)) {
         smsNotificationCheck();
     }
+    // Auto reboot check
+    if (config.reboot_interval != 0) {
+        if (millis() > (1000*60*config.reboot_interval)) {
+            powerReboot = true;
+        }
+    }
     if (saveConfig) {
         debug_println(F("Saving config to flash"));
         settings_save();
@@ -449,7 +455,7 @@ void loop() {
     }
     if (powerReboot) {
         debug_println(F("Rebooting"));
-        reboot();
         powerReboot = false;
+        reboot();
     }
 }
