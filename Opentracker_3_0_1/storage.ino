@@ -208,8 +208,8 @@ void storageServerScan(
     pIndexData->storeValid = true;
     pIndexData->pOldest = NULL;
     bool scanComplete = false;
-    // Locate the _single_ oldest record and checks for presence
-    // of duff marker values (indicating corrupt store)
+    // Scan the complete store looking for a _single_ oldest record and
+    // checking for presence of invalid marker values (indicating corrupt store)
     while (!scanComplete) {
         switch (pServerData->marker) {
         case STORED_SERVER_DATA_START:
@@ -252,6 +252,7 @@ void storageServerScan(
             if (pIndexData->count > 0) {
                 pIndexData->storeValid = false;
             } else {
+                // Store is empty so we choose the oldest location as the start
                 pIndexData->pOldest = storageGetServerFirst();
             }
         } else {
@@ -330,7 +331,7 @@ bool storageWriteServerDataToFlash(
                                                     storageGetServerFirst());
     return dueFlashStorage.write(
         STORAGE_SERVER_DATA_OFFSET + byteOffset,
-        (byte*)pServerData, sizeof(STORED_SERVER_DATA_T));
+        (byte*)&storedServerData, sizeof(STORED_SERVER_DATA_T));
 }
 
 /**
@@ -370,7 +371,7 @@ bool storageWriteServerData(
                             pServerData);
             serverDataIndex.count = 1;
             serverDataIndex.pOldest = pStoredServerData;
-        } else if (serverDataIndex.count == STORED_SERVER_DATA_START) {
+        } else if (serverDataIndex.count == STORED_SERVER_DATA_MAX) {
             // Store is full so overwrite oldest slot
             STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
             writtenOK = storageWriteServerDataToFlash(
