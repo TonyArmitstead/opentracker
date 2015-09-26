@@ -55,7 +55,7 @@ const char* BAD_TIME = "?TIME?";
 // Default value for settings.SMS_send_flags
 #define SMS_SEND_DEFAULT \
     SMS_SEND(LOCATION, ON) | \
-    SMS_SEND(LOCATION_FORMAT, MAP) | \
+    SMS_SEND(LOCATION_FORMAT, WEB) | \
     SMS_SEND(NSAT, ON) | \
     SMS_SEND(ALT, ON) | \
     SMS_SEND(SPEED, ON) | \

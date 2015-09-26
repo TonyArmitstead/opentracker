@@ -80,7 +80,7 @@ char* gps_form_map_location_url(
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-            "comgooglemaps://?q=%.6f,%.6f",
+            "comgooglemaps://?center=%.6f,%.6f&zoom=18",
             pGPSData->lat, pGPSData->lon)
             );
 }
@@ -93,7 +93,7 @@ char* gps_form_web_location_url(
     return calc_snprintf_return_pointer(
         pURL, urlSize,
         snprintf(pURL, urlSize,
-            "https://maps.google.co.uk/maps/place/%.6f,%.6f",
+            "https://www.google.com/maps/%%40%.6f%%2C%.6f%%2C18z",
             pGPSData->lat, pGPSData->lon)
             );
 }
