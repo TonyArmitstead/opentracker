@@ -6,7 +6,7 @@
 #define IMEI_LEN 15 // 14 digits + 1 check digit
 #define LED_INTERVAL 1000 // interval at which to blink status led (milliseconds)
 // millis() count for one second
-#define ONE_SEC 1000
+#define ONE_SEC ((unsigned long)1000)
 #define SECS(n) ((n)*ONE_SEC)
 #define MINS(n) ((n)*60*ONE_SEC)
 const char* BAD_IMEI = "?IMEI?";

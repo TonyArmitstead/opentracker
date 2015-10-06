@@ -32,6 +32,7 @@ unsigned long engineRunningTime = 0;
 unsigned long engineStartTime;
 TinyGPS gps;
 DueFlashStorage dueFlashStorage;
+FlashServerDataStore serverDataStore(dueFlashStorage, 1024, 64*1024);
 unsigned long gsmFailedToUpdateTime = 0;
 SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
@@ -166,7 +167,7 @@ void setup() {
     // turn on GSM
     powerUpGSMModem();
     // Initialise server data flash storage
-    storageServerDataInit();
+    serverDataStore.init();
     //setup ignition detection
     pinMode(PIN_S_DETECT, INPUT);
     lastServerUpdateTime = millis();
@@ -302,11 +303,11 @@ GSMSTATUS_T sendStoredMessagesToServer(
     // there was no GSM connection
     size_t count = 0;
     while ((networkStatus == CONNECTED) &&
-            storageReadOldestServerDataBlock(
+            serverDataStore.readOldestServerDataBlock(
                 serverData, DIM(serverData), &count) &&
             (timeDiff(millis(), timeNow) < 120*ONE_SEC)) {
         if (sendDataToServer(serverData, count)) {
-            if (storageForgetOldestServerData(count)) {
+            if (serverDataStore.forgetOldestServerData(count)) {
                 storedMessagesDelivered += 1;
             }
         }
@@ -346,7 +347,7 @@ void serverUpdateCheck() {
     // If we have network connection and have stored messages then send
     // them (or at least some of them) now
     if ((networkStatus == CONNECTED) &&
-        (storageGetStoredServerDataCount() > 0)) {
+        (serverDataStore.getStoredServerDataCount() > 0)) {
         networkStatus = sendStoredMessagesToServer(networkStatus);
     }
     // Is it time to update the server with current data?
@@ -384,7 +385,7 @@ void serverUpdateCheck() {
                 debug_println(F("Server updated OK"));
             } else {
                 debug_println(F("Server update failed so storing to flash"));
-                if (storageWriteServerData(&serverData)) {
+                if (serverDataStore.writeServerData(&serverData)) {
                     serverUpdatedOK = true;
                 } else {
                     debug_println(F("Store to flash failed"));

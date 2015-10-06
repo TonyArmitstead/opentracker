@@ -24,40 +24,13 @@
  *
  */
 /**
- * Size of total storage available for everything
- */
-#define STORAGE_SIZE (128*1024)
-/**
  *  Offset into flash where we store the configuration settings
  */
 #define STORAGE_SETTINGS_OFFSET 0
 /**
- * Offset into flash where we store the un-reported location data
- */
-#define STORAGE_SERVER_DATA_OFFSET 1024
-/**
- * Total length of GPS data area
- */
-#define STORAGE_SERVER_DATA_SIZE (64*1024)
-/**
  * STORED_SETTINGS_T.marker value
  */
 #define SETTINGS_VALID 0xAA557700
-/**
- * STORED_SERVER_DATA_T.marker values
- */
-#define STORED_SERVER_DATA_START 0x11111111
-#define STORED_SERVER_DATA_VALID 0xAA557700
-#define STORED_SERVER_DATA_EMPTY 0xFFFFFFFF
-/**
- * The max number of GPS records we can fit into the storage area
- */
-#define STORED_SERVER_DATA_MAX \
-    (STORAGE_SERVER_DATA_SIZE/sizeof(STORED_SERVER_DATA_T))
-/**
- * The index data we use to track usage of the GPS storage area
- */
-STORED_SERVER_DATA_INDEX_T serverDataIndex;
 
 /**
  * Calculates the 32 bit CRC of a memory block
@@ -148,65 +121,66 @@ bool storageLoadSettings(
 }
 
 /**
- * Gets a pointer to the start of the GPS flash storage area
- * @return a pointer to the start of the GPS flash storage area
+ * Gets a pointer to the first block of stored server data
+ * @return a pointer to the first block of stored server data
  */
-STORED_SERVER_DATA_T* storageGetServerFirst() {
-    return
-        (STORED_SERVER_DATA_T*)dueFlashStorage.readAddress(
-            STORAGE_SERVER_DATA_OFFSET);
+STORED_SERVER_DATA_T* ServerDataStore::getFirst(
+) {
+    return (STORED_SERVER_DATA_T*)readAddress(0);
 }
 
 /**
- * Gets a pointer to the last record in the GPS flash storage area
- * @return a pointer to the last record of the GPS flash storage area
+ * Gets a pointer to the last block of stored server data
+ * @return a pointer to the last block of stored server data
  */
-STORED_SERVER_DATA_T* storageGetServerLast() {
-    return storageGetServerFirst() + STORED_SERVER_DATA_MAX - 1;
+STORED_SERVER_DATA_T* ServerDataStore::getLast(
+) {
+    return getFirst() + size()/sizeof(STORED_SERVER_DATA_T) - 1;
 }
 
 /**
- * Given a pointer to a record in the flash storage area, we return a pointer
- * to the one after, taking in to account any buffer wrap
- * @param pServerData a pointer to a record in the flash storage area
+ * Given a pointer to an existing stored server data block we return a pointer
+ * to the following data block. This takes in to account any wrap at the end
+ * of the storage area.
+ * @param pServerData a pointer to a server data block in the storage area
  * @return a pointer to the record which follows pServerData, taking in to
  *         account any buffer wrap
  */
-STORED_SERVER_DATA_T* storageGetServerNext(
+STORED_SERVER_DATA_T* ServerDataStore::getNext(
     STORED_SERVER_DATA_T* pServerData
 ) {
-    if (pServerData >= storageGetServerLast())
-        return storageGetServerFirst();
+    if (pServerData == getLast()) {
+        return getFirst();
+    }
     return pServerData + 1;
 }
 
 /**
- * Given a pointer to a record in the flash storage area, we return a pointer
- * to the one before, taking in to account any buffer wrap
- * @param pServerData a pointer to a record in the flash storage area
- * @return a pointer to the record which precedes pServerData, taking in to
+ * Given a pointer to an existing stored server data block we return a pointer
+ * to the previous data block. This takes in to account any wrap at the start
+ * of the storage area.
+ * @param pServerData a pointer to a server data block in the storage area
+ * @return a pointer to the record which follows pServerData, taking in to
  *         account any buffer wrap
  */
-STORED_SERVER_DATA_T* storageGetServerPrev(
+STORED_SERVER_DATA_T* ServerDataStore::getPrev(
     STORED_SERVER_DATA_T* pServerData
 ) {
-    if (pServerData <= storageGetServerFirst())
-        return storageGetServerLast();
+    if (pServerData == getFirst()) {
+        return getLast();
+    }
     return pServerData - 1;
 }
 
 /**
  * Checks the flash store is valid and assigns the flash index data
- * @param pIndexData assigned the flash index data
  */
-void storageServerScan(
-    STORED_SERVER_DATA_INDEX_T* pIndexData
-) {
-    STORED_SERVER_DATA_T* pServerFirst = storageGetServerFirst();
+void ServerDataStore::scan() {
+    STORED_SERVER_DATA_T* pServerFirst = getFirst();
     STORED_SERVER_DATA_T* pServerData = pServerFirst;
-    pIndexData->count = 0;
-    pIndexData->storeValid = true;
-    pIndexData->pOldest = NULL;
+    this->indexData.count = 0;
+    this->indexData.storeValid = true;
+    this->indexData.pOldest = NULL;
     bool scanComplete = false;
     // Scan the complete store looking for a _single_ oldest record and
     // checking for presence of invalid marker values (indicating corrupt store)
@@ -214,20 +188,20 @@ void storageServerScan(
         switch (pServerData->marker) {
         case STORED_SERVER_DATA_START:
             // Have located the oldest record
-            if (pIndexData->pOldest == NULL) {
+            if (this->indexData.pOldest == NULL) {
                 debug_println(F("storageServerScan: located oldest record"));
                 // Record 1st oldest marker record
-                pIndexData->pOldest = pServerData;
-                pIndexData->count += 1;
+                this->indexData.pOldest = pServerData;
+                this->indexData.count += 1;
             } else {
                 debug_println(F("storageServerScan: found multiple oldest records!"));
                 // There can be only one
-                pIndexData->storeValid = false;
+                this->indexData.storeValid = false;
                 scanComplete = true;
             }
             break;
         case STORED_SERVER_DATA_VALID:
-            pIndexData->count += 1;
+            this->indexData.count += 1;
             break;
         case STORED_SERVER_DATA_EMPTY:
             break;
@@ -236,30 +210,31 @@ void storageServerScan(
             debug_println(pServerData - pServerFirst);
             // Invalid marker = duff flash (or maybe we have changed the record
             // format)
-            pIndexData->storeValid = false;
+            this->indexData.storeValid = false;
             scanComplete = true;
             break;
         }
-        pServerData = storageGetServerNext(pServerData);
+        pServerData = getNext(pServerData);
+        // Detect back at start i.e. all done
         if (pServerData == pServerFirst) {
             scanComplete = true;
         }
     }
-    if (pIndexData->storeValid) {
-        if (pIndexData->pOldest == NULL) {
+    if (this->indexData.storeValid) {
+        if (this->indexData.pOldest == NULL) {
             // Didnt find a start (oldest) record, so should not have seen
             // and valid records
-            if (pIndexData->count > 0) {
-                pIndexData->storeValid = false;
+            if (this->indexData.count > 0) {
+                this->indexData.storeValid = false;
             } else {
                 // Store is empty so we choose the oldest location as the start
-                pIndexData->pOldest = storageGetServerFirst();
+                this->indexData.pOldest = getFirst();
             }
         } else {
             // Did find a start (oldest) record, so check we got a consecutive
             // sequence of valid records following it. This checks we see
             // something like EEEESVVVEEEE and not EEEESVVVEVEE.
-            pServerFirst = pIndexData->pOldest;
+            pServerFirst = this->indexData.pOldest;
             pServerData = pServerFirst;
             size_t validCount = 0;
             scanComplete = false;
@@ -274,35 +249,33 @@ void storageServerScan(
                     scanComplete = true;
                     break;
                 }
-                pServerData = storageGetServerNext(pServerData);
+                pServerData = getNext(pServerData);
                 if (pServerData == pServerFirst) {
                     scanComplete = true;
                 }
             }
-            if (validCount != pIndexData->count) {
-                pIndexData->storeValid = false;
+            if (validCount != this->indexData.count) {
+                this->indexData.storeValid = false;
             }
         }
     }
 }
 
 /**
- * Erases the GPS data store. This effectively marks the store full of
+ * Erases the data store. This effectively marks the store full of
  * STORED_SERVER_DATA_EMPTY markers.
  * @return true if the store wiped OK, false if not
  */
-bool storageWipeServerData() {
+bool ServerDataStore::wipe() {
     bool wipeOK = true;
     byte wipeData[256];
     memset(wipeData, 0xFF, sizeof(wipeData));
 
-    size_t wipeLeft = STORAGE_SERVER_DATA_SIZE;
+    size_t wipeLeft = size();
     size_t wipeOffset = 0;
     while (wipeOK && (wipeLeft > 0)) {
         size_t wipeSize = MIN(sizeof(wipeData), wipeLeft);
-        if (!dueFlashStorage.write(
-                STORAGE_SERVER_DATA_OFFSET + wipeOffset,
-                wipeData, wipeSize)) {
+        if (!write(wipeOffset, wipeData, wipeSize)) {
             debug_println(F("storageWipeServerData: failed to wipe flash"));
             wipeOK = false;
         } else {
@@ -315,11 +288,12 @@ bool storageWipeServerData() {
 
 /**
  * Writes a GPS record to flash
- * @param pServerDataLocation the address within the flash area to write
- * @param pServerData the GPS record to write
+ * @param pServerDataLocation points to where in the store to write to
+ * @param marker the marker to use for this record
+ * @param pServerData the server data record to write
  * @return true if written OK, false if not
  */
-bool storageWriteServerDataToFlash(
+bool ServerDataStore::writeServerDataToStore(
     const STORED_SERVER_DATA_T* pServerDataLocation,
     unsigned long marker,
     const SERVER_DATA_T* pServerData
@@ -327,10 +301,9 @@ bool storageWriteServerDataToFlash(
     STORED_SERVER_DATA_T storedServerData;
     storedServerData.marker = marker;
     storedServerData.serverData = *pServerData;
-    size_t byteOffset = sizeof(STORED_SERVER_DATA_T) * (pServerDataLocation -
-                                                    storageGetServerFirst());
-    return dueFlashStorage.write(
-        STORAGE_SERVER_DATA_OFFSET + byteOffset,
+    size_t byteOffset = (pServerDataLocation - getFirst()) *
+                        sizeof(STORED_SERVER_DATA_T);
+    return write(byteOffset,
         (byte*)&storedServerData, sizeof(STORED_SERVER_DATA_T));
 }
 
@@ -339,73 +312,73 @@ bool storageWriteServerDataToFlash(
  * flash content is valid. If flash is not valid we erase it all and
  * prepare it for use.
  */
-void storageServerDataInit() {
-    storageServerScan(&serverDataIndex);
-    if (!serverDataIndex.storeValid) {
+void ServerDataStore::init() {
+    scan();
+    if (!this->indexData.storeValid) {
         debug_println(F("storageServerDataInit: wiping flash"));
-        serverDataIndex.count = 0;
-        serverDataIndex.pOldest = storageGetServerFirst();
-        serverDataIndex.storeValid = storageWipeServerData();
+        this->indexData.count = 0;
+        this->indexData.pOldest = getFirst();
+        this->indexData.storeValid = wipe();
     } else {
         debug_print(F("storageServerDataInit: flash is OK and holding "));
-        debug_print(serverDataIndex.count);
+        debug_print(this->indexData.count);
         debug_println(F(" records"));
     }
 }
 
 /**
- * Writes a GPS data block to flash storage.
- * @param pServerData the GPS data to write
+ * Writes a server data block to storage.
+ * @param pServerData the server data block to write
  * @return true if stored OK, false if not
  */
-bool storageWriteServerData(
+bool ServerDataStore::writeServerData(
     const SERVER_DATA_T* pServerData
 ) {
     bool writtenOK = false;
-    if (serverDataIndex.storeValid) {
-        if (serverDataIndex.count == 0) {
+    if (this->indexData.storeValid) {
+        if (this->indexData.count == 0) {
             // Store is empty so use first slot
-            STORED_SERVER_DATA_T* pStoredServerData = storageGetServerFirst();
-            writtenOK = storageWriteServerDataToFlash(
+            STORED_SERVER_DATA_T* pStoredServerData = getFirst();
+            writtenOK = writeServerDataToStore(
                             pStoredServerData, STORED_SERVER_DATA_START,
                             pServerData);
-            serverDataIndex.count = 1;
-            serverDataIndex.pOldest = pStoredServerData;
-        } else if (serverDataIndex.count == STORED_SERVER_DATA_MAX) {
+            this->indexData.count = 1;
+            this->indexData.pOldest = pStoredServerData;
+        } else if (this->indexData.count == maxRecordCount()) {
             // Store is full so overwrite oldest slot
-            STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
-            writtenOK = storageWriteServerDataToFlash(
+            STORED_SERVER_DATA_T* pStoredServerData = this->indexData.pOldest;
+            writtenOK = writeServerDataToStore(
                             pStoredServerData, STORED_SERVER_DATA_VALID,
                             pServerData);
             // Mark the following slot as the oldest
-            pStoredServerData = storageGetServerNext(pStoredServerData);
-            writtenOK = writtenOK && storageWriteServerDataToFlash(
+            pStoredServerData = getNext(pStoredServerData);
+            writtenOK = writtenOK && writeServerDataToStore(
                            pStoredServerData, STORED_SERVER_DATA_START,
                            &pStoredServerData->serverData);
-            serverDataIndex.pOldest = pStoredServerData;
+            this->indexData.pOldest = pStoredServerData;
         } else {
             // Locate next free slot as oldest+count
-            STORED_SERVER_DATA_T* pStoredServerData = serverDataIndex.pOldest;
-            for (size_t idx=0; idx < serverDataIndex.count; ++idx) {
-                pStoredServerData = storageGetServerNext(pStoredServerData);
+            STORED_SERVER_DATA_T* pStoredServerData = this->indexData.pOldest;
+            for (size_t idx=0; idx < this->indexData.count; ++idx) {
+                pStoredServerData = getNext(pStoredServerData);
             }
-            writtenOK = storageWriteServerDataToFlash(
+            writtenOK = writeServerDataToStore(
                             pStoredServerData, STORED_SERVER_DATA_VALID,
                             pServerData);
-            serverDataIndex.count += 1;
+            this->indexData.count += 1;
         }
         if (!writtenOK) {
             debug_println(F("storageSaveServerData: failed to update flash"));
-            serverDataIndex.storeValid = false;
+            this->indexData.storeValid = false;
             debug_println(F("storageSaveServerData: marked flash as invalid"));
         }
     }
     return writtenOK;
 }
 
-size_t storageGetStoredServerDataCount() {
-    if (serverDataIndex.storeValid) {
-        return serverDataIndex.count;
+size_t ServerDataStore::getStoredServerDataCount() {
+    if (this->indexData.storeValid) {
+        return this->indexData.count;
     }
     return 0;
 }
@@ -415,14 +388,14 @@ size_t storageGetStoredServerDataCount() {
  * @param pServerData where to write the GPS data
  * @return true if pServerData assigned ok, false if there is no data to return
  */
-bool storageReadOldestServerData(
+bool ServerDataStore::readOldestServerData(
     SERVER_DATA_T* pServerData
 ) {
-    if (!serverDataIndex.storeValid)
+    if (!this->indexData.storeValid)
         return false;
-    if (serverDataIndex.count == 0)
+    if (this->indexData.count == 0)
         return false;
-    *pServerData = serverDataIndex.pOldest->serverData;
+    *pServerData = this->indexData.pOldest->serverData;
     return true;
 }
 
@@ -433,20 +406,20 @@ bool storageReadOldestServerData(
  * @param pUsed assigned the number of array entries assigned
  * @return true if pServerData assigned ok, false if there is no data to return
  */
-bool storageReadOldestServerDataBlock(
+bool ServerDataStore::readOldestServerDataBlock(
     SERVER_DATA_T* pServerData,
     size_t dimServerData,
     size_t* pUsed
 ) {
-    if (!serverDataIndex.storeValid)
+    if (!this->indexData.storeValid)
         return false;
-    if (serverDataIndex.count == 0)
+    if (this->indexData.count == 0)
         return false;
     size_t usedEntries = 0;
-    STORED_SERVER_DATA_T* pStoredData = serverDataIndex.pOldest;
+    STORED_SERVER_DATA_T* pStoredData = this->indexData.pOldest;
     while (usedEntries < dimServerData) {
         *pServerData++ = pStoredData->serverData;
-        pStoredData = storageGetServerNext(pStoredData);
+        pStoredData = getNext(pStoredData);
         ++usedEntries;
     }
     if (pUsed) {
@@ -461,33 +434,33 @@ bool storageReadOldestServerDataBlock(
  * @return true if removed OK, false if no GPS data in flash or we failed
  *         to update the flash
  */
-bool storageForgetOldestServerData(
+bool ServerDataStore::forgetOldestServerData(
     size_t count
 ) {
     bool writtenOK = false;
-    if (serverDataIndex.storeValid && (serverDataIndex.count == 0)) {
-        STORED_SERVER_DATA_T* pStoredData = serverDataIndex.pOldest;
-        while (count-- && serverDataIndex.count) {
+    if (this->indexData.storeValid && (this->indexData.count != 0)) {
+        STORED_SERVER_DATA_T* pStoredData = this->indexData.pOldest;
+        while (count-- && this->indexData.count) {
             // Mark this slot as empty
-            writtenOK = storageWriteServerDataToFlash(
+            writtenOK = writeServerDataToStore(
                             pStoredData, STORED_SERVER_DATA_EMPTY,
                             &pStoredData->serverData);
-            pStoredData = storageGetServerNext(pStoredData);
-            serverDataIndex.count -= 1;
+            pStoredData = getNext(pStoredData);
+            this->indexData.count -= 1;
         }
-        if (serverDataIndex.count > 0) {
+        if (this->indexData.count > 0) {
             // Mark the last slot as the 'new' oldest
-            writtenOK = writtenOK && storageWriteServerDataToFlash(
+            writtenOK = writtenOK && writeServerDataToStore(
                            pStoredData, STORED_SERVER_DATA_START,
                            &pStoredData->serverData);
         }
-        serverDataIndex.pOldest = pStoredData;
+        this->indexData.pOldest = pStoredData;
     }
     return writtenOK;
 }
 
 /*
- * If the GPS storage block had space for 4 entries, these diagrams show all
+ * If the server storage block had space for 4 entries, these diagrams show all
  * possible valid states of the storage area.
  *   E = empty, S = start (oldest), V = Valid
  * When adding, scanning or removing entries make sure your algorithm copes
