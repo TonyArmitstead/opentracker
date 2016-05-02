@@ -93,6 +93,204 @@ SMS_FIELD_SPEC_T sms_server_config_fields[] = {
     SMS_ONOFF_FIELD("run", SERVER, RUNTIME)
 };
 
+/*
+ * Extracts a field from an input string
+ * @param pSource the string containing the input field
+ * @param pDest where to save the extracted field characters
+ * @param sizeDest the size of the buffer pointed to by pDest
+ * @param pTerm a string containing characters which are considered as
+ *        terminating characters for the field
+ * @return a pointer to the input character that terminated the field. This
+ *         could be a pointer to one of the terminator characters, a pointer
+ *         to the end of the input string (i.e. the '\0') or the first
+ *         character past the last one stored input pDest due to size
+ *         restrictions.
+ */
+const char* sms_extract_field(
+    const char* pSource,
+    char* pDest,
+    size_t sizeDest,
+    const char* pTerm
+) {
+    size_t idx = 0;
+    while ((*pSource != '\0') &&
+        (strchr(pTerm, *pSource) == NULL) &&
+        (idx < sizeDest - 1))
+        pDest[idx++] = *pSource++;
+    pDest[idx] = '\0';
+    return pSource;
+}
+
+/**
+ * Converts a wildcard time field value into the bit field within a TIMESPEC
+ * value
+ * @param pFieldName points to a string containing one of the recognized
+ *        field names {min,hour,day,date,mon}
+ * @param pFieldValue points to a string containing the field value
+ *    <min=x>,<hour=x>,<day=x>,<date=x>,<mon=x>
+ *    Specifies a time/date value with wildcards. All fields are optional.
+ *    If a field is missing the defaults are:
+ *      min=0, hour=*, day=*, date=*, mon=*
+ *      e.g. "Tmin=0,hour=18" means at 18:00 every day
+ *           "Tmin=0,hour=18,day=0" means at 18:00 on Sunday
+ *           "Tmin=0,hour=18,date=1" means at 18:00 on the 1st of the month
+ */
+bool = sms_assignWildcardTimeValueField(
+    const char* pFieldName,
+    const char* pFieldValue,
+    TIMESPEC* pTimeSpecValue
+) {
+   /*
+    *          31302928272625242322212019181716151413121110 9 8 7 6 5 4 3 2 1 0
+    *          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    *          |0|0|0|-|-|-|-|M|M|M|M|D|D|D|D|D|D|d|d|d|d|h|h|h|h|h|m|m|m|m|m|m|
+    *          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    *          Time/Date specifier, *=wildcard/dont care
+    *          Min  (m) 0..59,*=63  = 6 bits (0..63)
+    *          Hour (h) 0..23,*=31  = 5 bits (0..31)
+    *          Day  (d) 0..7, *=15  = 4 bits (0..15)
+    *          Date (D) 0..31,*=63  = 6 bits (0..64)
+    *          Mon  (M) 0..11,*=15  = 4 bits (0..15)
+    */
+    if (stricmp(pFieldName, "min") == 0) {
+    } else if (stricmp(pFieldName, "hour") == 0) {
+    } else if (stricmp(pFieldName, "day") == 0) {
+    } else if (stricmp(pFieldName, "date") == 0) {
+    } else if (stricmp(pFieldName, "mon") == 0) {
+
+    }
+}
+
+/**
+ * Converts a wildcard time spec string into an encoded time spec value
+ * @param pTimeValueString points to a string containing a ',' separated
+ *        set of <field>=<value> assignments
+ * @param pTimeSpecValue points to the TIMESPEC value to be assigned
+ * @return true if all fields assigned ok, false if field syntax is
+ *         bad or field value is bad
+ */
+bool sms_decodeWildcardTimeValueString(
+    const char* pTimeValueString,
+    TIMESPEC* pTimeSpecValue
+) {
+    char* pCursor = pTimeValueString;
+    char fieldName[5];
+    char fieldValue[15];
+    bool rCode = true;
+
+    while (*pCursor && rCode) {
+        char* pFieldEnd = sms_extract_field(
+            pCursor, fieldName, sizeof(fieldName), "=");
+        if (*pFieldEnd == '=') {
+            pCursor = pFieldEnd + 1;
+            pFieldEnd = sms_extract_field(
+                pCursor, fieldValue, sizeof(fieldValue), ",");
+            if (pFieldEnd == ',') {
+                pCursor = pFieldEnd + 1;
+            }
+            rCode = sms_assignWildcardTimeValueField(
+                fieldName, fieldValue, pTimeSpecValue);
+        } else {
+            rCode = false;
+        }
+    }
+    return rCode;
+}
+
+bool sms_decodePeriodTimeValueString(
+    const char* pTimeValueString,
+    TIMESPEC* pTimeSpecValue
+) {
+
+}
+
+bool sms_decodeIntervalTimeValueString(
+    const char* pTimeValueString,
+    TIMESPEC* pTimeSpecValue
+) {
+
+}
+
+/**
+ * Converts a time spec string into an encoded time spec value
+ * There are 4 time spec formats which are accepted, with each format
+ * identified by the first character of the spec string. The information
+ * following the first character will depend in the format as follows:
+ *
+ *    T<min=x>,<hour=x>,<day=x>,<date=x>,<mon=x>
+ *    Specifies a time/date value with wildcards. All fields are optional.
+ *    If a field is missing the defaults are:
+ *      min=0, hour=*, day=*, date=*, mon=*
+ *      e.g. "Tmin=0,hour=18" means at 18:00 every day
+ *           "Tmin=0,hour=18,day=0" means at 18:00 on Sunday
+ *           "Tmin=0,hour=18,date=1" means at 18:00 on the 1st of the month
+ *
+ *    P<x>
+ *    Specifies a period - every m minutes calculated as an offset from
+ *    midnight. x = 0..1439
+ *      e.g. "P60" means every hour
+ *
+ *    I<l>,<h>
+ *    Specifies an inclusive hour range, 0<= l,h <= 23, l < h
+ *      e.g. "I7,22" means between 07:00 and 22:00
+ *
+ *    X<l>,<h>
+ *    Specifies an exclusive hour range, 0<= l,h <= 23, l < h
+ *      e.g. "X7,22" means between 00:00..06:59 and 22:00..23:59
+ *           i.e. not between 07:00 and 22:00
+ *
+ * @param pTimeSpecString points to the time spec string to decode
+ * @param pTimeSpecValue points to the TIMESPEC value to assign
+ * @return true if string decoded OK, false if not
+ */
+bool sms_decodeTimeSpecString(
+    const char* pTimeSpecString,
+    TIMESPEC* pTimeSpecValue
+) {
+    TIMESPEC timeSpecValue = TIMESPEC_TYPE_NONE;
+    bool rStat = false;
+    switch (toupper(*pTimeSpecString)) {
+    case 'T':
+        rStat = sms_decodeWildcardTimeValueString(
+            pTimeSpecString+1, &timeSpecValue);
+        if (rStat) {
+            timeSpecValue &= ~TIMESPEC_TYPE_MASK;
+            timeSpecValue |= TIMESPEC_TYPE_WILDCARD;
+        }
+        break;
+    case 'P':
+        rStat = sms_decodePeriodTimeValueString(
+            pTimeSpecString+1, &timeSpecValue);
+        if (rStat) {
+            timeSpecValue &= ~TIMESPEC_TYPE_MASK;
+            timeSpecValue |= TIMESPEC_TYPE_PERIOD;
+        }
+        break;
+    case 'I':
+        rStat = sms_decodeIntervalTimeValueString(
+            pTimeSpecString+1, &timeSpecValue);
+        if (rStat) {
+            timeSpecValue &= ~TIMESPEC_TYPE_MASK;
+            timeSpecValue |= TIMESPEC_TYPE_IINTERVAL;
+        }
+        break;
+    case 'X':
+        rStat = sms_decodeIntervalTimeValueString(
+            pTimeSpecString+1, &timeSpecValue);
+        if (rStat) {
+            timeSpecValue &= ~TIMESPEC_TYPE_MASK;
+            timeSpecValue |= TIMESPEC_TYPE_XINTERVAL;
+        }
+        break;
+    default:
+        timeSpecValue = TIMESPEC_TYPE_NONE;
+        rStat = false;
+        break;
+    }
+    *pTimeSpecValue = timeSpecValue;
+    return rStat;
+}
+
 /**
  * Forms a string containing the configured set of SMS data return values
  * @param pStr points to where to write the string
@@ -406,34 +604,6 @@ void sms_rebootfreq_handler(
     } else {
         sms_send_msg("Error: bad minutes value", pPhoneNumber);
     }
-}
-
-/*
- * Extracts a field from an input string
- * @param pSource the string containing the input field
- * @param pDest where to save the extracted field characters
- * @param sizeDest the size of the buffer pointed to by pDest
- * @param pTerm a string containing characters which are considered as
- *        terminating characters for the field
- * @return a pointer to the input character that terminated the field. This
- *         could be a pointer to one of the terminator characters, a pointer
- *         to the end of the input string (i.e. the '\0') or the first
- *         character past the last one stored input pDest due to size
- *         restrictions.
- */
-const char* sms_extract_field(
-    const char* pSource,
-    char* pDest,
-    size_t sizeDest,
-    const char* pTerm
-) {
-    size_t idx = 0;
-    while ((*pSource != '\0') &&
-        (strchr(pTerm, *pSource) == NULL) &&
-        (idx < sizeDest - 1))
-        pDest[idx++] = *pSource++;
-    pDest[idx] = '\0';
-    return pSource;
 }
 
 /**

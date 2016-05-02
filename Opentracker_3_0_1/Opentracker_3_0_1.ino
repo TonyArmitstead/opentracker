@@ -32,7 +32,11 @@ unsigned long engineRunningTime = 0;
 unsigned long engineStartTime;
 TinyGPS gps;
 DueFlashStorage dueFlashStorage;
+#if 0
 FlashServerDataStore serverDataStore(dueFlashStorage, 1024, 64*1024);
+#else
+RAMServerDataStore serverDataStore(2048);
+#endif
 unsigned long gsmFailedToUpdateTime = 0;
 SETTINGS_T config;
 GPSDATA_T lastGoodGPSData;
