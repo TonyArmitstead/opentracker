@@ -124,41 +124,71 @@ const char* sms_extract_field(
 /**
  * Converts a wildcard time field value into the bit field within a TIMESPEC
  * value
- * @param pFieldName points to a string containing one of the recognized
+ * @param pFieldName points to a string containing one of the recognised
  *        field names {min,hour,day,date,mon}
- * @param pFieldValue points to a string containing the field value
- *    <min=x>,<hour=x>,<day=x>,<date=x>,<mon=x>
- *    Specifies a time/date value with wildcards. All fields are optional.
- *    If a field is missing the defaults are:
- *      min=0, hour=*, day=*, date=*, mon=*
- *      e.g. "Tmin=0,hour=18" means at 18:00 every day
- *           "Tmin=0,hour=18,day=0" means at 18:00 on Sunday
- *           "Tmin=0,hour=18,date=1" means at 18:00 on the 1st of the month
+ * @param pFieldValue points to a string containing the field value. If the
+ *        field value is a '*' it means a wildcard (dont care).
+ * @param pTimeSpecValue points to the time spec value to update
+ * @return true if the field conversion went OK, false if a bad field name
+ *         or a bad field value
  */
-bool = sms_assignWildcardTimeValueField(
+bool sms_assignWildcardTimeValueField(
     const char* pFieldName,
     const char* pFieldValue,
     TIMESPEC* pTimeSpecValue
 ) {
-   /*
-    *          31302928272625242322212019181716151413121110 9 8 7 6 5 4 3 2 1 0
-    *          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    *          |0|0|0|-|-|-|-|M|M|M|M|D|D|D|D|D|D|d|d|d|d|h|h|h|h|h|m|m|m|m|m|m|
-    *          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    *          Time/Date specifier, *=wildcard/dont care
-    *          Min  (m) 0..59,*=63  = 6 bits (0..63)
-    *          Hour (h) 0..23,*=31  = 5 bits (0..31)
-    *          Day  (d) 0..7, *=15  = 4 bits (0..15)
-    *          Date (D) 0..31,*=63  = 6 bits (0..64)
-    *          Mon  (M) 0..11,*=15  = 4 bits (0..15)
-    */
+    bool rCode = true;
+    int bitShiftCount = 0;
+    unsigned long fieldMask = 0;
+    unsigned long maxValue = 0;
+    unsigned long wildcardValue = 0;
+    unsigned long value = 0;
+    /*
+     * 31302928272625242322212019181716151413121110 9 8 7 6 5 4 3 2 1 0
+     * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     * |0|0|0|-|-|-|-|M|M|M|M|D|D|D|D|D|D|d|d|d|d|h|h|h|h|h|m|m|m|m|m|m|
+     * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     * Time/Date specifier, *=wildcard/dont care
+     *   Min  (m) 0..59,*=63  = 6 bits (0..63)
+     *   Hour (h) 0..23,*=31  = 5 bits (0..31)
+     *   Day  (d) 0..7, *=15  = 4 bits (0..15)
+     *   Date (D) 0..31,*=63  = 6 bits (0..64)
+     *   Mon  (M) 0..11,*=15  = 4 bits (0..15)
+     */
+    /* Figure out the field parameters based on the name */
     if (stricmp(pFieldName, "min") == 0) {
+        bitShiftCount = 0;  fieldMask = 0x3F; maxValue = 59; wildcardValue = 63;
     } else if (stricmp(pFieldName, "hour") == 0) {
+        bitShiftCount = 6;  fieldMask = 0x1F; maxValue = 23; wildcardValue = 31;
     } else if (stricmp(pFieldName, "day") == 0) {
+        bitShiftCount = 11; fieldMask = 0xF;  maxValue = 7;  wildcardValue = 15;
     } else if (stricmp(pFieldName, "date") == 0) {
+        bitShiftCount = 15; fieldMask = 0x3F; maxValue = 31; wildcardValue = 63;
     } else if (stricmp(pFieldName, "mon") == 0) {
-
+        bitShiftCount = 21; fieldMask = 0xF;  maxValue = 11; wildcardValue = 15;
+    } else {
+        /* unknown field name */
+        rCode = false;
     }
+    if (rCode) {
+        if (*pFieldValue == '*') {
+            value = wildcardValue;
+        } else {
+            char* pEnd = 0;
+            value = strtoul(pFieldValue, &pEnd, 0);
+            if (*pEnd != '\0') {
+                rCode = false;
+            } else {
+                rCode = (value <= maxValue);
+            }
+        }
+        if (rCode) {
+            /* Insert field into TIMESPEC value */
+            *pTimeSpecValue &= ~(fieldMask << bitShiftCount);
+            *pTimeSpecValue |= ((value & fieldMask) << bitShiftCount);
+        }
+    }
+    return rCode;
 }
 
 /**
@@ -173,19 +203,19 @@ bool sms_decodeWildcardTimeValueString(
     const char* pTimeValueString,
     TIMESPEC* pTimeSpecValue
 ) {
-    char* pCursor = pTimeValueString;
+    const char* pCursor = pTimeValueString;
     char fieldName[5];
     char fieldValue[15];
     bool rCode = true;
 
     while (*pCursor && rCode) {
-        char* pFieldEnd = sms_extract_field(
+        const char* pFieldEnd = sms_extract_field(
             pCursor, fieldName, sizeof(fieldName), "=");
         if (*pFieldEnd == '=') {
             pCursor = pFieldEnd + 1;
             pFieldEnd = sms_extract_field(
                 pCursor, fieldValue, sizeof(fieldValue), ",");
-            if (pFieldEnd == ',') {
+            if (*pFieldEnd == ',') {
                 pCursor = pFieldEnd + 1;
             }
             rCode = sms_assignWildcardTimeValueField(
