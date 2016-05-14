@@ -227,11 +227,30 @@ bool sms_decodeWildcardTimeValueString(
     return rCode;
 }
 
+/**
+ * Converts a time period value into the value field of a TIMESPEC. The
+ * time period string specifies a number of minutes in the range 0..1439
+ * (1440 = 24*60) e.g. "60" means every hour.
+ * @param pTimeValueString points to the time period value string
+ * @param pTimeSpecValue points to the TIMESPEC to be modified
+ * @return true if the conversion was OK, false if not
+ */
 bool sms_decodePeriodTimeValueString(
     const char* pTimeValueString,
     TIMESPEC* pTimeSpecValue
 ) {
-
+    char* pEnd = 0;
+    unsigned long value = strtoul(pTimeValueString, &pEnd, 0);
+    if (*pEnd != '\0') {
+        rCode = false;
+    } else {
+        rCode = (value <= 1439);
+    }
+    if (rCode) {
+        /* Insert field into lower 11 bits of TIMESPEC value */
+        *pTimeSpecValue &= (0xFFFFFFFF << 11);
+        *pTimeSpecValue |= value;
+    }
 }
 
 bool sms_decodeIntervalTimeValueString(
